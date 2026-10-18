@@ -1,0 +1,6 @@
+{
+  "name": "UANGKU - Manajemen Keuangan & Scan Struk AI",
+  "description": "Aplikasi manajemen keuangan pribadi lengkap dengan scan struk otomatis (ChatGPT & Gemini AI), kelola kas/dompet, statistik pengeluaran, dan ekspor laporan.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
