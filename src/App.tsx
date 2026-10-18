@@ -22,6 +22,7 @@ import { ReportScreen } from './components/screens/ReportScreen';
 import { ReportDownloadedScreen } from './components/screens/ReportDownloadedScreen';
 import { ProfileSettingsScreen } from './components/screens/ProfileSettingsScreen';
 import { AdminScreen } from './components/screens/AdminScreen';
+import { LegalScreen } from './components/screens/LegalScreen';
 import { BottomNav } from './components/BottomNav';
 import { WebHeader } from './components/WebHeader';
 import { AiSettingsModal } from './components/modals/AiSettingsModal';
@@ -49,6 +50,12 @@ export default function App() {
       const hash = window.location.hash;
       if (path === '/admin' || path.startsWith('/admin') || hash === '#admin') {
         return 'admin';
+      }
+      if (path === '/privacy' || path.startsWith('/privacy') || hash === '#privacy') {
+        return 'privacy';
+      }
+      if (path === '/terms' || path.startsWith('/terms') || hash === '#terms') {
+        return 'terms';
       }
     }
     return 'welcome';
@@ -134,6 +141,10 @@ export default function App() {
         const hash = window.location.hash;
         if (path === '/admin' || path.startsWith('/admin') || hash === '#admin') {
           setCurrentScreen('admin');
+        } else if (path === '/privacy' || path.startsWith('/privacy') || hash === '#privacy') {
+          setCurrentScreen('privacy');
+        } else if (path === '/terms' || path.startsWith('/terms') || hash === '#terms') {
+          setCurrentScreen('terms');
         }
       }
     };
@@ -595,6 +606,14 @@ export default function App() {
                 }}
                 onCreateAnother={() => setCurrentScreen('add_transaction')}
               />
+            )}
+
+            {currentScreen === 'privacy' && (
+              <LegalScreen type="privacy" onBack={() => setCurrentScreen(isAuthenticated ? 'dashboard' : 'welcome')} />
+            )}
+
+            {currentScreen === 'terms' && (
+              <LegalScreen type="terms" onBack={() => setCurrentScreen(isAuthenticated ? 'dashboard' : 'welcome')} />
             )}
           </motion.div>
         </AnimatePresence>

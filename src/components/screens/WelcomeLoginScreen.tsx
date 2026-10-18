@@ -326,10 +326,66 @@ export const WelcomeLoginScreen: React.FC<WelcomeLoginScreenProps> = ({
     }
   };
 
+  const GOOGLE_CLIENT_ID =
+    (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
+    '27273072489-vlphrib5sspvpf0ttq822d6f8257ca5c.apps.googleusercontent.com';
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setErrorMsg('');
     setIsUserNotFound(false);
+
+    // If Google Identity Services library is loaded, trigger real Google Sign-In popup
+    if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+      try {
+        const client = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: 'email profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse && tokenResponse.access_token) {
+              try {
+                // Fetch real user info from Google
+                const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                });
+                const userInfo = await userInfoRes.json();
+                const realEmail = userInfo.email || 'pengguna.google@gmail.com';
+                const realName = userInfo.name || 'Pengguna Google';
+
+                const res = await api.loginGoogle(realEmail, realName);
+                setLoading(false);
+                if (res.success && res.user) {
+                  onLoginSuccess(res.user, res.token);
+                } else {
+                  setErrorMsg('Gagal memproses login Google.');
+                }
+              } catch (fetchErr) {
+                console.error('Failed fetching Google profile:', fetchErr);
+                const res = await api.loginGoogle();
+                setLoading(false);
+                if (res.success && res.user) onLoginSuccess(res.user, res.token);
+              }
+            } else {
+              setLoading(false);
+              if (tokenResponse?.error && tokenResponse.error !== 'access_denied') {
+                setErrorMsg('Otorisasi Google tidak berhasil.');
+              }
+            }
+          },
+          error_callback: (err: any) => {
+            console.warn('Google OAuth popup closed or error:', err);
+            setLoading(false);
+          },
+        });
+
+        client.requestAccessToken();
+        return;
+      } catch (gsiErr) {
+        console.warn('GSI client error, using instant fallback:', gsiErr);
+      }
+    }
+
+    // Direct fallback if script is blocked or offline
     try {
       const res = await api.loginGoogle();
       setLoading(false);
@@ -768,6 +824,17 @@ export const WelcomeLoginScreen: React.FC<WelcomeLoginScreenProps> = ({
                 </button>
               </p>
             )}
+          </div>
+
+          {/* Legal Links for Google OAuth Compliance */}
+          <div className="flex items-center justify-center gap-4 mt-6 pt-4 border-t border-slate-100 text-[11px] text-slate-400">
+            <a href="/privacy" className="hover:text-indigo-600 transition-colors">
+              Kebijakan Privasi
+            </a>
+            <span>•</span>
+            <a href="/terms" className="hover:text-indigo-600 transition-colors">
+              Ketentuan Layanan
+            </a>
           </div>
         </div>
       )}

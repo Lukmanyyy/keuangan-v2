@@ -61,4 +61,6 @@ export type ScreenId =
   | 'scan_camera'
   | 'scan_review'
   | 'scan_success'
-  | 'admin';
+  | 'admin'
+  | 'privacy'
+  | 'terms';
