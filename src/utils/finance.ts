@@ -98,6 +98,99 @@ export function calculateTransactionSummary(transactions: Transaction[]): {
 }
 
 /**
+ * Calculate income, expense, and net profit strictly for the current month
+ * (from the 1st of the month to the last day of the month)
+ */
+export function calculateMonthlyTransactionSummary(
+  transactions: Transaction[],
+  targetDate = new Date()
+): {
+  income: number;
+  expense: number;
+  profit: number;
+  monthName: string;
+  dateRangeStr: string;
+} {
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth(); // 0-indexed
+
+  // Start of month: 1st day 00:00:00.000
+  const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0);
+  // End of month: last day 23:59:59.999
+  const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+  let income = 0;
+  let expense = 0;
+
+  for (const t of transactions) {
+    if (!t.date) continue;
+    const tDate = new Date(t.date);
+    if (isNaN(tDate.getTime())) continue;
+
+    if (tDate >= startOfMonth && tDate <= endOfMonth) {
+      if (t.type === 'pemasukan') {
+        income += t.amount || 0;
+      } else if (t.type === 'pengeluaran') {
+        expense += t.amount || 0;
+      }
+    }
+  }
+
+  const monthNamesId = [
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+
+  const lastDay = endOfMonth.getDate();
+  const monthName = `${monthNamesId[month]} ${year}`;
+  const dateRangeStr = `1 - ${lastDay} ${monthNamesId[month].slice(0, 3)}`;
+
+  return {
+    income,
+    expense,
+    profit: income - expense,
+    monthName,
+    dateRangeStr,
+  };
+}
+
+/**
+ * Calculate all-time cumulative profit (income - expense) from day 1 to present
+ */
+export function calculateAllTimeProfit(transactions: Transaction[]): {
+  income: number;
+  expense: number;
+  profit: number;
+} {
+  let income = 0;
+  let expense = 0;
+
+  for (const t of transactions) {
+    if (t.type === 'pemasukan') {
+      income += t.amount || 0;
+    } else if (t.type === 'pengeluaran') {
+      expense += t.amount || 0;
+    }
+  }
+
+  return {
+    income,
+    expense,
+    profit: income - expense,
+  };
+}
+
+/**
  * Calculate category breakdown sorted by largest expense percentage
  */
 export function calculateCategoryStats(

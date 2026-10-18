@@ -793,12 +793,14 @@ async function startServer() {
   app.post('/api/scan-receipt', async (req: Request, res: Response) => {
     try {
       const user = getAuthUser(req);
-      const { imageBase64, receiptType, customApiKey } = req.body;
+      const { imageBase64, receiptType, customApiKey, geminiApiKey } = req.body;
 
       const providerPreference =
         db.globalAiSettings?.aiProvider || user?.settings?.aiProvider || 'auto';
       const activeGeminiKey =
-        db.globalAiSettings?.geminiApiKey || process.env.GEMINI_API_KEY;
+        geminiApiKey ||
+        db.globalAiSettings?.geminiApiKey ||
+        process.env.GEMINI_API_KEY;
       const activeOpenAiKey =
         customApiKey ||
         req.headers['x-openai-key'] ||

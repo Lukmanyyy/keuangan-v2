@@ -40,6 +40,7 @@ export interface User {
 
 export interface AppSettings {
   openaiApiKey?: string;
+  geminiApiKey?: string;
   aiProvider: 'chatgpt' | 'gemini' | 'auto';
   notifications: boolean;
   darkMode: boolean;

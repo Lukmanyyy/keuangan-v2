@@ -18,7 +18,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     let extractedData: any = null;
 
     // 1. Google Gemini Flash Vision via Direct REST (Optimized for Cloudflare Edge)
-    const geminiKey = env.GEMINI_API_KEY;
+    const geminiKey = body.geminiApiKey || env.GEMINI_API_KEY;
     if (geminiKey) {
       try {
         let base64Data = '';

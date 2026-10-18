@@ -19,11 +19,13 @@ import {
 } from 'lucide-react';
 import { Wallet as WalletType, Transaction, User, ScreenId } from '../../types';
 import { formatRupiah, calculateTotalKas, calculateTransactionSummary } from '../../utils/finance';
+import { DashboardSkeleton } from '../skeletons/AppSkeletons';
 
 interface DashboardScreenProps {
   user: User;
   wallets: WalletType[];
   transactions: Transaction[];
+  isLoading?: boolean;
   onNavigate: (screen: ScreenId) => void;
   onOpenScanModal: () => void;
   onOpenAddModal: () => void;
@@ -34,12 +36,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   user,
   wallets,
   transactions,
+  isLoading,
   onNavigate,
   onOpenScanModal,
   onOpenAddModal,
   onOpenAiSettings,
 }) => {
   const [showBalance, setShowBalance] = useState(true);
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   const totalKas = calculateTotalKas(wallets);
   const { income, expense } = calculateTransactionSummary(transactions);

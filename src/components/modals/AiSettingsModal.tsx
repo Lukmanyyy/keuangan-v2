@@ -15,6 +15,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   settings,
   onSave,
 }) => {
+  const [geminiKey, setGeminiKey] = useState(settings.geminiApiKey || '');
   const [apiKey, setApiKey] = useState(settings.openaiApiKey || '');
   const [provider, setProvider] = useState<'chatgpt' | 'gemini' | 'auto'>(settings.aiProvider || 'auto');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -24,6 +25,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
+      geminiApiKey: geminiKey.trim(),
       openaiApiKey: apiKey.trim(),
       aiProvider: provider,
     });
@@ -45,12 +47,12 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-sm text-slate-900">Integrasi AI Scan Struk</h3>
-              <p className="text-[10px] text-slate-400">ChatGPT & Gemini OCR</p>
+              <p className="text-[10px] text-slate-400">Google Gemini & ChatGPT OCR</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-90 text-slate-500 flex items-center justify-center transition-all cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -66,7 +68,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setProvider('gemini')}
-                className={`py-2 px-2 rounded-lg font-bold transition-all cursor-pointer text-center ${
+                className={`py-2 px-2 rounded-lg font-bold transition-all active:scale-95 cursor-pointer text-center ${
                   provider === 'gemini' || provider === 'auto'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 bg-white/50'
@@ -78,7 +80,7 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={() => setProvider('chatgpt')}
-                className={`py-2 px-2 rounded-lg font-bold transition-all cursor-pointer text-center ${
+                className={`py-2 px-2 rounded-lg font-bold transition-all active:scale-95 cursor-pointer text-center ${
                   provider === 'chatgpt'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 bg-white/50'
@@ -90,16 +92,37 @@ export const AiSettingsModal: React.FC<AiSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Gemini Status Card */}
-          <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-3 text-[11px] text-emerald-900 space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-emerald-800">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Gemini 2.5 Flash Aktif (Gratis)</span>
+          {/* Gemini API Key Input */}
+          {(provider === 'gemini' || provider === 'auto') && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-slate-700">
+                  Google Gemini API Key (Gratis)
+                </label>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-indigo-600 font-bold hover:underline"
+                >
+                  Ambil Key ↗
+                </a>
+              </div>
+              <div className="relative">
+                <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="password"
+                  value={geminiKey}
+                  onChange={(e) => setGeminiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                Buka <strong>aistudio.google.com</strong> ➔ klik <em>Get API key</em> ➔ tempel di sini. Struk belanja akan langsung terbaca otomatis 100%!
+              </p>
             </div>
-            <p className="text-[10px] text-emerald-700 leading-snug">
-              Key Gemini sudah terpasang otomatis dari Google AI Studio. Anda bisa memindai hingga 1.500 struk per hari tanpa biaya langganan!
-            </p>
-          </div>
+          )}
 
           {/* Optional OpenAI API Key Input */}
           {provider === 'chatgpt' && (

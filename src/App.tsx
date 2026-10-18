@@ -33,6 +33,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
 
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -100,6 +101,7 @@ export default function App() {
 
   // Load user data (wallets, transactions, settings)
   const loadUserData = useCallback(async () => {
+    setIsDataLoading(true);
     try {
       const [walletsRes, txRes, settingsRes] = await Promise.all([
         api.getWallets(),
@@ -130,6 +132,8 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Failed to load user financial data:', err);
+    } finally {
+      setIsDataLoading(false);
     }
   }, []);
 
@@ -487,6 +491,7 @@ export default function App() {
                 user={activeUser}
                 wallets={wallets}
                 transactions={transactions}
+                isLoading={isDataLoading}
                 onNavigate={(s) => handleNavigate(s)}
                 onOpenScanModal={handleStartScanFlow}
                 onOpenAddModal={() => handleNavigate('add_transaction')}
@@ -498,6 +503,7 @@ export default function App() {
               <TransactionListScreen
                 transactions={transactions}
                 wallets={wallets}
+                isLoading={isDataLoading}
                 onNavigate={(s) => handleNavigate(s)}
                 onDeleteTransaction={handleDeleteTransaction}
                 onOpenScanModal={handleStartScanFlow}
@@ -533,6 +539,17 @@ export default function App() {
             {currentScreen === 'profile' && (
               <ProfileSettingsScreen
                 user={activeUser}
+                settings={settings}
+                onSaveSettings={(newSettings) => {
+                  setSettings((prev) => {
+                    const updated = { ...prev, ...newSettings };
+                    try {
+                      localStorage.setItem('uangku_app_settings', JSON.stringify(updated));
+                    } catch {}
+                    api.updateSettings(newSettings).catch(() => {});
+                    return updated;
+                  });
+                }}
                 onNavigate={(s) => handleNavigate(s)}
                 onOpenAiSettings={() => setIsAiSettingsOpen(true)}
                 onUpdateUser={handleUpdateProfile}
@@ -563,6 +580,8 @@ export default function App() {
             {currentScreen === 'scan_camera' && (
               <CameraScanScreen
                 receiptType={selectedScanType}
+                geminiApiKey={settings.geminiApiKey}
+                openaiApiKey={settings.openaiApiKey}
                 onClose={() => setCurrentScreen('dashboard')}
                 onScanComplete={handleScanComplete}
               />

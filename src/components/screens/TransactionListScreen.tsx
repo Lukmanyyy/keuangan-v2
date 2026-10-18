@@ -23,10 +23,12 @@ import {
   getCategoryIconComponent,
   getCategoryColorMeta,
 } from '../../data/categories';
+import { TransactionListSkeleton } from '../skeletons/AppSkeletons';
 
 interface TransactionListScreenProps {
   transactions: Transaction[];
   wallets: Wallet[];
+  isLoading?: boolean;
   onOpenAddModal: () => void;
   onOpenScanModal?: () => void;
   onDeleteTransaction: (id: string) => void;
@@ -36,11 +38,15 @@ interface TransactionListScreenProps {
 export const TransactionListScreen: React.FC<TransactionListScreenProps> = ({
   transactions,
   wallets,
+  isLoading,
   onOpenAddModal,
   onOpenScanModal,
   onDeleteTransaction,
   onNavigate,
 }) => {
+  if (isLoading) {
+    return <TransactionListSkeleton />;
+  }
   const [filterType, setFilterType] = useState<'semua' | 'pemasukan' | 'pengeluaran' | 'transfer'>('semua');
   const [periodFilter, setPeriodFilter] = useState<'semua' | 'hari_ini' | 'minggu_ini' | 'bulan_ini' | 'bulan_lalu'>('semua');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');

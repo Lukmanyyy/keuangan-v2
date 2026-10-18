@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Layers,
   Tag,
@@ -11,11 +11,22 @@ import {
   Sparkles,
   AlertTriangle,
   X,
+  Key,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Check,
+  ShieldCheck,
+  BookOpen,
+  Camera,
+  CheckCircle2,
 } from 'lucide-react';
-import { User, ScreenId } from '../../types';
+import { User, ScreenId, AppSettings } from '../../types';
 
 interface ProfileSettingsScreenProps {
   user: User;
+  settings?: AppSettings;
+  onSaveSettings?: (settings: Partial<AppSettings>) => void;
   onNavigate: (screen: ScreenId) => void;
   onOpenAiSettings: () => void;
   onUpdateUser: (name: string, email: string) => void;
@@ -25,6 +36,8 @@ interface ProfileSettingsScreenProps {
 
 export const ProfileSettingsScreen: React.FC<ProfileSettingsScreenProps> = ({
   user,
+  settings,
+  onSaveSettings,
   onNavigate,
   onOpenAiSettings,
   onUpdateUser,
@@ -36,6 +49,41 @@ export const ProfileSettingsScreen: React.FC<ProfileSettingsScreenProps> = ({
   const [email, setEmail] = useState(user.email || 'luthfi@email.com');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+
+  // Gemini API Key (BYOK) State
+  const [geminiKeyInput, setGeminiKeyInput] = useState(settings?.geminiApiKey || '');
+  const [showKey, setShowKey] = useState(false);
+  const [keySavedMsg, setKeySavedMsg] = useState('');
+  const [isTutorialModalOpen, setIsTutorialModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (settings?.geminiApiKey !== undefined) {
+      setGeminiKeyInput(settings.geminiApiKey);
+    }
+  }, [settings?.geminiApiKey]);
+
+  const handleSaveGeminiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onSaveSettings) {
+      onSaveSettings({
+        geminiApiKey: geminiKeyInput.trim(),
+        aiProvider: 'gemini',
+      });
+    }
+    setKeySavedMsg('Kunci Gemini berhasil disimpan!');
+    setTimeout(() => setKeySavedMsg(''), 3000);
+  };
+
+  const handleRemoveGeminiKey = () => {
+    setGeminiKeyInput('');
+    if (onSaveSettings) {
+      onSaveSettings({
+        geminiApiKey: '',
+      });
+    }
+    setKeySavedMsg('Kunci Gemini dihapus. Kembali ke mode contoh.');
+    setTimeout(() => setKeySavedMsg(''), 3000);
+  };
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +195,117 @@ export const ProfileSettingsScreen: React.FC<ProfileSettingsScreenProps> = ({
                 {feedbackMsg}
               </p>
             )}
+          </div>
+
+          {/* Gemini AI Key BYOK Card */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-xs space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/25">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Kunci Scan Struk AI
+                  </h3>
+                  <span className="text-[11px] text-slate-400">
+                    Google Gemini 2.5 Flash Vision
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              {settings?.geminiApiKey ? (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-1 rounded-full">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Aktif
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                  Mode Simulasi
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Setiap akun Google mendapat kuota gratis <strong>~1.500 scan struk per hari</strong>. Pasang kunci pribadi Anda agar struk belanja terbaca otomatis dengan akurasi tinggi!
+            </p>
+
+            {/* Tutorial Button */}
+            <button
+              type="button"
+              onClick={() => setIsTutorialModalOpen(true)}
+              className="w-full py-2.5 px-3.5 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 active:scale-[0.98] border border-indigo-200/80 rounded-2xl flex items-center justify-between text-indigo-700 transition-all cursor-pointer shadow-2xs"
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-bold">Panduan 1 Menit: Cara Ambil Kunci Gratis</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-indigo-500" />
+            </button>
+
+            {/* Key Input Form */}
+            <form onSubmit={handleSaveGeminiKey} className="space-y-3 pt-1">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                  Gemini API Key Anda
+                </label>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                    placeholder="Tempel kode AIzaSy... di sini"
+                    className="w-full bg-slate-50 border border-slate-200/90 rounded-2xl pl-10 pr-10 py-2.5 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {keySavedMsg && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-[11px] font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{keySavedMsg}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={!geminiKeyInput.trim()}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Simpan Kunci</span>
+                </button>
+                {settings?.geminiApiKey && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveGeminiKey}
+                    className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    title="Hapus Kunci Pribadi"
+                  >
+                    Hapus
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {/* Privacy Guarantee Note */}
+            <div className="flex items-start gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-500">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span className="leading-snug">
+                <strong>Privasi Terjamin:</strong> Kunci disimpan aman hanya di browser perangkat Anda dan tidak dibagikan ke server publik manapun.
+              </span>
+            </div>
           </div>
         </div>
 
@@ -315,6 +474,128 @@ export const ProfileSettingsScreen: React.FC<ProfileSettingsScreenProps> = ({
                 Ya, Mulai Baru
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Step-by-Step Tutorial Modal */}
+      {isTutorialModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">
+                    Cara Ambil Kunci Gemini Gratis
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Hanya 1 menit dengan akun Google biasa
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTutorialModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-90 text-slate-500 flex items-center justify-center transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 3 Visual Steps */}
+            <div className="space-y-4">
+              {/* Step 1 */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-extrabold flex items-center justify-center">
+                      1
+                    </span>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Buka Google AI Studio
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    Resmi Google
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed pl-8">
+                  Kunjungi portal AI resmi dari Google. Masuk menggunakan akun Google / Gmail Anda yang biasa.
+                </p>
+                <div className="pl-8 pt-1">
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 py-2 px-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+                  >
+                    <span>Buka aistudio.google.com</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-extrabold flex items-center justify-center">
+                    2
+                  </span>
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Klik Tombol "Create API Key"
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed pl-8">
+                  Di halaman Google AI Studio, klik tombol biru <strong>Create API key</strong>, pilih proyek bawaan Google Anda, lalu klik konfirmasi.
+                </p>
+                <div className="pl-8 pt-1">
+                  <div className="inline-flex items-center gap-2 bg-blue-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-2xs">
+                    <Key className="w-3.5 h-3.5" />
+                    <span>+ Create API key</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-extrabold flex items-center justify-center">
+                    3
+                  </span>
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Salin & Tempelkan ke Sini
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed pl-8">
+                  Salin kode yang diawali huruf <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[11px]">AIzaSy...</code>, tutup jendela ini, lalu tempelkan ke kolom <strong>Gemini API Key Anda</strong> di halaman profil.
+                </p>
+              </div>
+            </div>
+
+            {/* Security Guarantee Box */}
+            <div className="bg-emerald-50 border border-emerald-200/80 p-3.5 rounded-2xl space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>3 Hal yang Membuat Ini 100% Aman:</span>
+              </div>
+              <ul className="text-[11px] text-emerald-800 space-y-1 list-disc pl-5 leading-relaxed">
+                <li><strong>100% Gratis:</strong> Diberikan kuota 1.500 scan struk per hari tanpa perlu kartu kredit.</li>
+                <li><strong>Privasi Penuh:</strong> Kunci hanya tersimpan di browser HP Anda, tidak bisa dilihat orang lain.</li>
+                <li><strong>Akurat Seketika:</strong> Struk Indomaret, Alfamart, restoran, dan bensin langsung terbaca presisi!</li>
+              </ul>
+            </div>
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setIsTutorialModalOpen(false)}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white rounded-2xl text-xs font-bold transition-all cursor-pointer"
+            >
+              Saya Mengerti, Tutup Panduan
+            </button>
           </div>
         </div>
       )}
