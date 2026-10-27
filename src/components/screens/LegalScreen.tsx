@@ -30,7 +30,7 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ type, onBack }) => {
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
               {isPrivacy ? 'Kebijakan Privasi (Privacy Policy)' : 'Ketentuan Layanan (Terms of Service)'}
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">UANGKU • Terakhir Diperbarui: 18 Oktober 2026</p>
+            <p className="text-xs text-slate-400 mt-0.5">UANGKU • Terakhir Diperbarui: 27 Oktober 2026</p>
           </div>
         </div>
 
@@ -71,7 +71,7 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ type, onBack }) => {
                 3. Penyimpanan Data Keuangan
               </h2>
               <p>
-                Data pencatatan transaksi, dompet/kas, dan foto struk belanja Anda disimpan secara aman dan terenkripsi. Kami tidak menjual, menyewakan, atau membagikan data keuangan Anda kepada pihak ketiga atau pengiklan mana pun.
+                Akun, kategori, dompet, dan transaksi disimpan di Cloudflare D1. Foto struk disimpan di bucket Cloudflare R2 privat jika fitur tersebut diaktifkan. Saat memindai, foto dikirim ke Google Gemini atau OpenAI sesuai konfigurasi provider; kebijakan dan retensi provider berlaku. Administrator dapat mengelola akun dan melihat ringkasan penggunaan. Password aplikasi disimpan sebagai hash, bukan teks asli. Kami tidak menjual data kepada pengiklan.
               </p>
             </section>
 
@@ -81,7 +81,7 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ type, onBack }) => {
                 4. Hak Pengguna & Penghapusan Akun
               </h2>
               <p>
-                Anda berhak mengekspor laporan keuangan Anda sewaktu-waktu (format PDF/Excel/CSV) atau menghapus akun beserta seluruh data transaksi Anda melalui menu pengaturan.
+                Anda dapat mengekspor laporan PDF/Excel/CSV dan data transaksi JSON. Untuk menghapus akun beserta data, hubungi administrator melalui kontak di bawah. Penghapusan data aktif tidak langsung menghapus salinan backup yang masih mengikuti masa retensi Cloudflare atau kebijakan provider AI.
               </p>
             </section>
 

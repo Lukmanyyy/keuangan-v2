@@ -68,7 +68,7 @@ export const ReportDownloadedScreen: React.FC<ReportDownloadedScreenProps> = ({
           Laporan Siap Diunduh!
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xs leading-relaxed">
-          File rekapan keuangan periode Mei 2024 telah selesai diproses dan siap dibuka.
+          File sesuai periode yang dipilih telah dibuat. Periksa daftar unduhan browser untuk menyimpannya.
         </p>
 
         {/* File Detail Chip */}
@@ -78,8 +78,8 @@ export const ReportDownloadedScreen: React.FC<ReportDownloadedScreenProps> = ({
               {format.toUpperCase()}
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-800">Laporan_Keuangan_Mei_2024.{format.toLowerCase()}</p>
-              <p className="text-[10px] text-slate-400">142 KB • Tersedia di folder Unduhan</p>
+              <p className="text-xs font-bold text-slate-800">laporan-uangku.{format.toLowerCase()}</p>
+              <p className="text-[10px] text-slate-400">Lokasi penyimpanan mengikuti pengaturan browser</p>
             </div>
           </div>
         </div>
@@ -91,7 +91,7 @@ export const ReportDownloadedScreen: React.FC<ReportDownloadedScreenProps> = ({
             className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-indigo-500/25 transition-all cursor-pointer"
           >
             <ExternalLink className="w-4 h-4" />
-            <span>Buka File Laporan</span>
+            <span>Kembali ke Laporan</span>
           </button>
 
           <button
@@ -99,7 +99,7 @@ export const ReportDownloadedScreen: React.FC<ReportDownloadedScreenProps> = ({
             className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             <Share2 className="w-4 h-4" />
-            <span>Bagikan Dokumen</span>
+            <span>Bagikan Tautan Aplikasi</span>
           </button>
 
           <button

@@ -36,6 +36,7 @@ export interface User {
   name: string;
   email: string;
   avatar: string;
+  role?: 'user' | 'admin';
 }
 
 export interface AppSettings {
@@ -46,6 +47,7 @@ export interface AppSettings {
   darkMode: boolean;
   hasOpenAiKey?: boolean;
   hasGeminiKey?: boolean;
+  hasReceiptStorage?: boolean;
 }
 
 export type ScreenId =

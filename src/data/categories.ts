@@ -234,51 +234,23 @@ export const getCategoryColorMeta = (colorId: string) => {
   );
 };
 
-const CATEGORIES_STORAGE_KEY = 'uangku_user_categories_v2';
+let currentCategories: CategoryItem[] = DEFAULT_CATEGORIES;
+
+export async function syncCategories() {
+  const response=await fetch('/api/categories',{credentials:'same-origin'});
+  const data:any=await response.json();
+  if(!response.ok)throw new Error(data.message || 'Kategori gagal dimuat');
+  currentCategories=data.categories || DEFAULT_CATEGORIES;
+}
+export function clearCategoryCache() { currentCategories=DEFAULT_CATEGORIES; }
 
 export const loadStoredCategories = (targetType?: 'pengeluaran' | 'pemasukan'): CategoryItem[] => {
-  try {
-    const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Ensure items have type; if missing, check name or assign default
-        const normalized: CategoryItem[] = parsed.map((item) => {
-          if (!item.type) {
-            const isInc = DEFAULT_INCOME_CATEGORIES.some((ic) => ic.name.toLowerCase() === item.name.toLowerCase());
-            return { ...item, type: isInc ? 'pemasukan' : 'pengeluaran' };
-          }
-          return item;
-        });
-
-        // Ensure both expense and income items exist
-        const hasExpense = normalized.some((c) => c.type === 'pengeluaran');
-        const hasIncome = normalized.some((c) => c.type === 'pemasukan');
-        const fullList: CategoryItem[] = [
-          ...(hasExpense ? [] : DEFAULT_EXPENSE_CATEGORIES),
-          ...(hasIncome ? [] : DEFAULT_INCOME_CATEGORIES),
-          ...normalized,
-        ];
-
-        if (targetType) {
-          return fullList.filter((c) => c.type === targetType);
-        }
-        return fullList;
-      }
-    }
-  } catch (err) {
-    console.error('Failed to load stored categories', err);
-  }
-
-  if (targetType === 'pengeluaran') return DEFAULT_EXPENSE_CATEGORIES;
-  if (targetType === 'pemasukan') return DEFAULT_INCOME_CATEGORIES;
-  return DEFAULT_CATEGORIES;
+  return targetType ? currentCategories.filter(c=>c.type===targetType) : currentCategories;
 };
 
-export const saveStoredCategories = (categories: CategoryItem[]) => {
-  try {
-    localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(categories));
-  } catch (err) {
-    console.error('Failed to save categories', err);
-  }
+export const saveStoredCategories = async (categories: CategoryItem[]) => {
+  const response=await fetch('/api/categories',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Uangku-Request':'1'},body:JSON.stringify({categories})});
+  const data:any=await response.json();
+  if(!response.ok)throw new Error(data.message || 'Kategori gagal disimpan');
+  currentCategories=data.categories;
 };

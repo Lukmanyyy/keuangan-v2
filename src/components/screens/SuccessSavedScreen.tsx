@@ -24,6 +24,7 @@ export const SuccessSavedScreen: React.FC<SuccessSavedScreenProps> = ({
   onGoHome,
 }) => {
   useEffect(() => {
+    if (!transaction) return;
     try {
       confetti({
         particleCount: 60,
@@ -34,8 +35,9 @@ export const SuccessSavedScreen: React.FC<SuccessSavedScreenProps> = ({
     } catch {}
   }, []);
 
-  const merchant = transaction?.merchant || 'Kopi Kenangan';
-  const amount = transaction?.amount || 45000;
+  if (!transaction) return <div className="p-6">Belum ada transaksi tersimpan. <button onClick={onGoHome}>Kembali ke beranda</button></div>;
+  const merchant = transaction.merchant;
+  const amount = transaction.amount;
   const isExpense = transaction ? transaction.type === 'pengeluaran' : true;
 
   return (
@@ -59,7 +61,7 @@ export const SuccessSavedScreen: React.FC<SuccessSavedScreenProps> = ({
           Transaksi Berhasil Disimpan!
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xs leading-relaxed">
-          Catatan pengeluaran struk belanja Anda telah berhasil dibukukan ke saldo kas.
+          Transaksi telah disimpan di database dan saldo dompet diperbarui.
         </p>
 
         {/* Transaction Summary Card */}

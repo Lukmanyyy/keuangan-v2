@@ -327,6 +327,7 @@ export const TransactionListScreen: React.FC<TransactionListScreenProps> = ({
                           </h4>
                           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5">
                             <span className="text-[11px] text-slate-500 font-medium">{tx.category}</span>
+                            {tx.receiptImage && <a href={tx.receiptImage} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline text-xs">Lihat struk</a>}
                             <span className="text-slate-300">•</span>
                             <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded font-medium">
                               {walletName}

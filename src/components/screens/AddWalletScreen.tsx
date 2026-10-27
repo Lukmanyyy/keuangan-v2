@@ -65,7 +65,7 @@ export const AddWalletScreen: React.FC<AddWalletScreenProps> = ({ onBack, onSave
           icon: selectedIcon,
         })
       );
-    } catch {
+    } finally {
       setIsSubmitting(false);
     }
   };

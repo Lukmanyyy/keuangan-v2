@@ -1,287 +1,55 @@
-import { Transaction, Wallet, User, AppSettings } from '../types';
+import type { AppSettings, Transaction, User, Wallet } from '../types';
 
-const TOKEN_KEY = 'uangku_auth_token';
-
-function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
 }
-
-function setStoredToken(token: string | null) {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch {}
+async function request<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-Uangku-Request':'1'},body:body===undefined?undefined:JSON.stringify(body)});
+  const data: any = await response.json().catch(()=>{ throw new ApiError('Respons server tidak valid. Periksa deployment Functions.',response.status); });
+  if (!response.ok || data.success===false) throw new ApiError(data.message || 'Permintaan gagal',response.status);
+  return data;
 }
-
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getStoredToken();
-  const headers = new Headers(options.headers || {});
-  
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-
-  return fetch(url, {
-    ...options,
-    headers,
-  });
+type AuthResult = {success:boolean;user:User;message?:string};
+type WalletResult = {success:boolean;wallet:Wallet;wallets:Wallet[]};
+type TxResult = {success:boolean;transaction:Transaction;wallets:Wallet[]};
+export interface AdminOverview {
+  success: boolean;
+  stats: {totalUsers:number;activeUsersToday:number;totalWallets:number;totalTransactions:number;totalSystemBalance:number};
+  users: Array<User & {createdAt:string;lastActiveAt:string;walletsCount:number;transactionsCount:number;totalBalance:number}>;
+  globalAiSettings: {aiProvider:'auto'|'gemini'|'chatgpt';hasGeminiKey:boolean;hasOpenAiKey:boolean};
 }
-
 export const api = {
-  // Token Management
-  getToken: getStoredToken,
-  setToken: setStoredToken,
-  clearToken: () => setStoredToken(null),
-
-  // Auth
-  async register(name: string, email: string, password: string): Promise<{ success: boolean; user: User; token: string; message?: string }> {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
-    });
-    const data = await res.json();
-    if (data.success && data.token) {
-      setStoredToken(data.token);
+  register:(name:string,email:string,password:string)=>request<AuthResult>('/api/auth/register','POST',{name,email,password}),
+  login:(identifier:string,password?:string)=>request<AuthResult>('/api/auth/login','POST',{email:identifier,password}),
+  loginGoogle:(credential:string)=>request<AuthResult>('/api/auth/google','POST',{credential}),
+  getConfig:()=>request<{success:boolean;googleClientId:string}>('/api/config'),
+  getMe:()=>request<AuthResult>('/api/auth/me'),
+  logout:()=>request<{success:boolean}>('/api/auth/logout','POST',{}),
+  updateProfile:(name:string,email:string)=>request<AuthResult>('/api/auth/profile','PUT',{name,email}),
+  getWallets:()=>request<{success:boolean;wallets:Wallet[]}>('/api/wallets'),
+  createWallet:(wallet:Omit<Wallet,'id'>)=>request<WalletResult>('/api/wallets','POST',wallet),
+  updateWallet:(id:string,updates:Partial<Wallet>)=>request<WalletResult>(`/api/wallets/${encodeURIComponent(id)}`,'PUT',updates),
+  deleteWallet:(id:string)=>request<WalletResult>(`/api/wallets/${encodeURIComponent(id)}`,'DELETE'),
+  async getTransactions(params?:{type?:string;walletId?:string;search?:string}) {
+    const transactions:Transaction[]=[];let offset:number|null=0;
+    while(offset!==null) {
+      const page:{transactions:Transaction[];nextOffset:number|null}=await request(`/api/transactions?${new URLSearchParams({...params,offset:String(offset)})}`);
+      transactions.push(...page.transactions);offset=page.nextOffset;
     }
-    return data;
+    return {success:true,transactions};
   },
-
-  async login(identifier: string, password?: string): Promise<{ success: boolean; user: User; token: string; message?: string }> {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: identifier, username: identifier, password }),
-    });
-    const data = await res.json();
-    if (data.success && data.token) {
-      setStoredToken(data.token);
-    }
-    return data;
-  },
-
-  async loginGoogle(email?: string, name?: string): Promise<{ success: boolean; user: User; token: string }> {
-    try {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.token) {
-          setStoredToken(data.token);
-          return data;
-        }
-      }
-    } catch (err) {
-      console.warn('API Google login failed, continuing with direct local session:', err);
-    }
-
-    // Local session fallback (works 100% on static hosting / offline)
-    const cleanEmail = email || 'pengguna.google@gmail.com';
-    const cleanName = name || 'Pengguna Google';
-    const fallbackToken = 'tok_g_' + Date.now() + Math.random().toString(36).substring(2, 6);
-    setStoredToken(fallbackToken);
-    return {
-      success: true,
-      user: {
-        id: 'u_g_' + Date.now(),
-        name: cleanName,
-        email: cleanEmail,
-        avatar: cleanName.charAt(0).toUpperCase() || 'G',
-      },
-      token: fallbackToken,
-    };
-  },
-
-  async logout(): Promise<{ success: boolean }> {
-    try {
-      await authFetch('/api/auth/logout', { method: 'POST' });
-    } catch {}
-    setStoredToken(null);
-    return { success: true };
-  },
-
-  async getMe(): Promise<{ success: boolean; user?: User; message?: string }> {
-    const token = getStoredToken();
-    if (!token) {
-      return { success: false, message: 'Belum login' };
-    }
-    const res = await authFetch('/api/auth/me');
-    return res.json();
-  },
-
-  async updateProfile(name: string, email: string): Promise<{ success: boolean; user: User }> {
-    const res = await authFetch('/api/auth/profile', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email }),
-    });
-    return res.json();
-  },
-
-  // Wallets
-  async getWallets(): Promise<{ success: boolean; wallets: Wallet[] }> {
-    const res = await authFetch('/api/wallets');
-    return res.json();
-  },
-
-  async createWallet(wallet: Omit<Wallet, 'id'>): Promise<{ success: boolean; wallet: Wallet; wallets?: Wallet[] }> {
-    const res = await authFetch('/api/wallets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(wallet),
-    });
-    return res.json();
-  },
-
-  async updateWallet(id: string, updates: Partial<Wallet>): Promise<{ success: boolean; wallet: Wallet; wallets?: Wallet[] }> {
-    const res = await authFetch(`/api/wallets/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    return res.json();
-  },
-
-  async deleteWallet(id: string): Promise<{ success: boolean; wallets?: Wallet[] }> {
-    const res = await authFetch(`/api/wallets/${id}`, { method: 'DELETE' });
-    return res.json();
-  },
-
-  // Transactions
-  async getTransactions(params?: { type?: string; walletId?: string; search?: string }): Promise<{ success: boolean; transactions: Transaction[] }> {
-    const query = new URLSearchParams();
-    if (params?.type) query.append('type', params.type);
-    if (params?.walletId) query.append('walletId', params.walletId);
-    if (params?.search) query.append('search', params.search);
-
-    const res = await authFetch(`/api/transactions?${query.toString()}`);
-    return res.json();
-  },
-
-  async createTransaction(tx: Omit<Transaction, 'id' | 'createdAt'>): Promise<{ success: boolean; transaction: Transaction; wallets: Wallet[] }> {
-    const res = await authFetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tx),
-    });
-    return res.json();
-  },
-
-  async deleteTransaction(id: string): Promise<{ success: boolean; wallets: Wallet[] }> {
-    const res = await authFetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    return res.json();
-  },
-
-  // Receipt Scan via AI (ChatGPT / Gemini / Local OCR)
-  async scanReceipt(params: {
-    imageBase64?: string;
-    receiptType: 'pengeluaran' | 'pemasukan';
-    customApiKey?: string;
-  }): Promise<{
-    success: boolean;
-    data: {
-      merchant: string;
-      amount: number;
-      date: string;
-      category: string;
-      items: Array<{ name: string; qty: number; price: number }>;
-      notes: string;
-      aiEngine: string;
-    };
-  }> {
-    const res = await authFetch('/api/scan-receipt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    return res.json();
-  },
-
-  // Settings
-  async getSettings(): Promise<{ success: boolean; settings: AppSettings }> {
-    const res = await authFetch('/api/settings');
-    return res.json();
-  },
-
-  async updateSettings(settings: Partial<AppSettings>): Promise<{ success: boolean; settings: AppSettings }> {
-    const res = await authFetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    });
-    return res.json();
-  },
-
-  // Admin APIs (/admin)
-  async getAdminOverview(): Promise<{
-    success: boolean;
-    stats: {
-      totalUsers: number;
-      activeUsersToday: number;
-      totalWallets: number;
-      totalTransactions: number;
-      totalSystemBalance: number;
-    };
-    users: Array<{
-      id: string;
-      name: string;
-      email: string;
-      avatar: string;
-      password: string;
-      createdAt: string;
-      lastActiveAt: string;
-      walletsCount: number;
-      transactionsCount: number;
-      totalBalance: number;
-      wallets: any[];
-      transactions: any[];
-    }>;
-    globalAiSettings: {
-      openaiApiKey: string;
-      geminiApiKey?: string;
-      aiProvider: 'chatgpt' | 'gemini' | 'auto';
-    };
-  }> {
-    const res = await fetch('/api/admin/overview');
-    return res.json();
-  },
-
-  async resetUserPassword(userId: string, newPassword: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch('/api/admin/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, newPassword }),
-    });
-    return res.json();
-  },
-
-  async saveAdminAiSettings(settings: {
-    openaiApiKey: string;
-    geminiApiKey?: string;
-    aiProvider: string;
-  }): Promise<{ success: boolean; message: string; globalAiSettings?: any }> {
-    const res = await fetch('/api/admin/ai-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    });
-    return res.json();
-  },
-
-  async deleteAdminUser(userId: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`/api/admin/users/${userId}`, {
-      method: 'DELETE',
-    });
-    return res.json();
+  createTransaction:(tx:Omit<Transaction,'id'|'createdAt'>)=>request<TxResult>('/api/transactions','POST',tx),
+  deleteTransaction:(id:string)=>request<TxResult>(`/api/transactions/${encodeURIComponent(id)}`,'DELETE'),
+  scanReceipt:(params:{imageBase64:string;receiptType:'pengeluaran'|'pemasukan'})=>request<{success:boolean;data:Omit<Transaction,'id'|'createdAt'|'walletId'|'type'> & {aiEngine:string}}>('/api/scan-receipt','POST',params),
+  getSettings:()=>request<{success:boolean;settings:AppSettings}>('/api/settings'),
+  updateSettings:(settings:Partial<AppSettings>)=>request<{success:boolean;settings:AppSettings}>('/api/settings','POST',settings),
+  getAdminOverview:()=>request<AdminOverview>('/api/admin/overview'),
+  resetUserPassword:(userId:string,newPassword:string)=>request<{success:boolean;message:string}>('/api/admin/reset-password','POST',{userId,newPassword}),
+  saveAdminAiSettings:(settings:{aiProvider:string})=>request<{success:boolean;message:string}>('/api/admin/ai-settings','POST',settings),
+  deleteAdminUser:(id:string)=>request<{success:boolean;message:string}>(`/api/admin/users/${encodeURIComponent(id)}`,'DELETE'),
+  async downloadCsv(params:{startDate?:string;endDate?:string}={}) {
+    const response = await fetch(`/api/export/report?${new URLSearchParams({format:'csv',...params})}`,{credentials:'same-origin'});
+    if (!response.ok) { const data: any = await response.json(); throw new ApiError(data.message || 'Unduhan gagal',response.status); }
+    return response.blob();
   },
 };

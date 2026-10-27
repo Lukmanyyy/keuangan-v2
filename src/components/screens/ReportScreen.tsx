@@ -17,8 +17,8 @@ import { formatRupiah, calculateTransactionSummary } from '../../utils/finance';
 interface ReportScreenProps {
   transactions: Transaction[];
   wallets: Wallet[];
-  onTriggerDownload?: (format: 'pdf' | 'xlsx' | 'csv') => void;
-  onDownloadReport?: (format: 'pdf' | 'xlsx' | 'csv') => void;
+  onTriggerDownload?: (format: 'pdf' | 'xlsx' | 'csv', transactions?: Transaction[]) => void;
+  onDownloadReport?: (format: 'pdf' | 'xlsx' | 'csv', transactions?: Transaction[]) => void;
   onNavigate: (screen: ScreenId) => void;
 }
 
@@ -67,7 +67,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       ? `Periode Tahun ${now.getFullYear()}`
       : 'Semua Periode';
 
-  const triggerDownload = onDownloadReport || onTriggerDownload || (() => {});
+  const triggerDownload = (format: 'pdf' | 'xlsx' | 'csv') => (onDownloadReport || onTriggerDownload)?.(format, filteredTransactions);
 
   const renderNetCashFlow = (netVal: number) => {
     const absVal = Math.abs(netVal);

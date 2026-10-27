@@ -55,7 +55,7 @@ export const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
     wallets.find((w) => w.id !== (wallets[0]?.id || 'w1'))?.id || wallets[1]?.id || ''
   );
 
-  // Category state with localStorage persistence
+  // Per-account categories loaded from D1 before this screen mounts.
   const [categories, setCategories] = useState<CategoryItem[]>(() => loadStoredCategories());
 
   // Categories matching active transaction type
@@ -86,7 +86,10 @@ export const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [amountRaw, setAmountRaw] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => {
+    const value = new Date();
+    return new Date(value.getTime() - value.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  });
   const [notes, setNotes] = useState('');
   const [merchant, setMerchant] = useState('');
 
@@ -97,9 +100,9 @@ export const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
 
   const parsedAmount = Number(amountRaw) || 0;
 
-  const handleCategoriesUpdate = (updated: CategoryItem[]) => {
+  const handleCategoriesUpdate = async (updated: CategoryItem[]) => {
+    try { await saveStoredCategories(updated); } catch(error) { alert(error instanceof Error?error.message:'Kategori gagal disimpan'); return; }
     setCategories(updated);
-    saveStoredCategories(updated);
     const targetList = updated.filter((c) => (c.type || 'pengeluaran') === activeCategoryType);
     if (!targetList.some((c) => c.name === selectedCategory) && targetList.length > 0) {
       setSelectedCategory(targetList[0].name);
@@ -136,12 +139,12 @@ export const AddTransactionScreen: React.FC<AddTransactionScreenProps> = ({
           toWalletId: type === 'transfer' ? toWalletId : undefined,
           merchant: finalMerchant,
           amount: parsedAmount,
-          date: new Date(date).toISOString(),
+          date: new Date(`${date}T12:00:00`).toISOString(),
           category: type === 'transfer' ? 'Transfer' : selectedCategory,
           notes: notes.trim() || undefined,
         })
       );
-    } catch {
+    } finally {
       setIsSubmitting(false);
     }
   };

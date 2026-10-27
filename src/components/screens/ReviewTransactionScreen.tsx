@@ -28,6 +28,7 @@ import { CategoryManagerModal } from '../modals/CategoryManagerModal';
 
 interface ReviewTransactionScreenProps {
   initialData: {
+    type?: 'pengeluaran' | 'pemasukan';
     merchant: string;
     amount: number;
     date: string;
@@ -49,7 +50,7 @@ interface ReviewTransactionScreenProps {
     category: string;
     notes?: string;
     items?: TransactionItem[];
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export const ReviewTransactionScreen: React.FC<ReviewTransactionScreenProps> = ({
@@ -59,11 +60,15 @@ export const ReviewTransactionScreen: React.FC<ReviewTransactionScreenProps> = (
   onBack,
   onSave,
 }) => {
-  const [type, setType] = useState<'pengeluaran' | 'pemasukan'>('pengeluaran');
+  const [type, setType] = useState<'pengeluaran' | 'pemasukan'>(initialData.type || 'pengeluaran');
+  const [saving,setSaving] = useState(false);
   const [walletId, setWalletId] = useState(defaultWalletId || wallets[0]?.id || '');
   const [merchant, setMerchant] = useState(initialData.merchant || 'Struk Belanja');
   const [amountStr, setAmountStr] = useState(initialData.amount ? initialData.amount.toString() : '');
-  const [date, setDate] = useState(() => initialData.date ? initialData.date.slice(0, 16) : new Date().toISOString().slice(0, 16));
+  const [date, setDate] = useState(() => {
+    const value = new Date(initialData.date || Date.now());
+    return new Date(value.getTime() - value.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  });
   const [category, setCategory] = useState(initialData.category || 'Belanja');
   const [notes, setNotes] = useState(initialData.notes || '');
   const [items, setItems] = useState<TransactionItem[]>(initialData.items || []);
@@ -83,19 +88,21 @@ export const ReviewTransactionScreen: React.FC<ReviewTransactionScreenProps> = (
     setAmountStr(raw);
   };
 
-  const handleCategoriesUpdate = (updated: CategoryItem[]) => {
+  const handleCategoriesUpdate = async (updated: CategoryItem[]) => {
+    try { await saveStoredCategories(updated); } catch(error) { alert(error instanceof Error?error.message:'Kategori gagal disimpan'); return; }
     setCategories(updated);
-    saveStoredCategories(updated);
     const targetList = updated.filter((c) => (c.type || 'pengeluaran') === activeCategoryType);
     if (!targetList.some((c) => c.name === category) && targetList.length > 0) {
       setCategory(targetList[0].name);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if(saving)return;
     const numAmount = parseRupiah(amountStr);
-    onSave({
+    setSaving(true);
+    try { await onSave({
       merchant,
       amount: numAmount || 0,
       walletId,
@@ -104,7 +111,7 @@ export const ReviewTransactionScreen: React.FC<ReviewTransactionScreenProps> = (
       category,
       notes,
       items,
-    });
+    }); } finally { setSaving(false); }
   };
 
   const getWalletIconComp = (iconName?: string) => {
@@ -353,6 +360,7 @@ export const ReviewTransactionScreen: React.FC<ReviewTransactionScreenProps> = (
 
             <button
               type="submit"
+              disabled={saving}
               className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl text-xs font-bold shadow-md shadow-indigo-500/25 transition-all cursor-pointer mt-2"
             >
               Simpan Transaksi Struk

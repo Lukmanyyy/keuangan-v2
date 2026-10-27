@@ -4,7 +4,9 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from './services/api';
+import { api, ApiError } from './services/api';
+import { downloadReport } from './services/reports';
+import { syncCategories, clearCategoryCache } from './data/categories';
 import { User, Wallet, Transaction, AppSettings, ScreenId } from './types';
 import { WelcomeLoginScreen } from './components/screens/WelcomeLoginScreen';
 import { DashboardScreen } from './components/screens/DashboardScreen';
@@ -107,6 +109,7 @@ export default function App() {
         api.getWallets(),
         api.getTransactions(),
         api.getSettings(),
+        syncCategories(),
       ]);
 
       if (walletsRes.success && walletsRes.wallets) {
@@ -132,6 +135,7 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Failed to load user financial data:', err);
+      alert(err instanceof Error ? err.message : 'Data gagal dimuat. Coba muat ulang halaman.');
     } finally {
       setIsDataLoading(false);
     }
@@ -168,17 +172,6 @@ export default function App() {
         typeof window !== 'undefined' &&
         (window.location.pathname.startsWith('/admin') || window.location.hash === '#admin');
 
-      const token = api.getToken();
-      if (!token) {
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsAuthChecking(false);
-        if (!isAdminRoute) {
-          setCurrentScreen('welcome');
-        }
-        return;
-      }
-
       try {
         const res = await api.getMe();
         if (res.success && res.user) {
@@ -189,15 +182,16 @@ export default function App() {
           }
           await loadUserData();
         } else {
-          api.clearToken();
           setUser(null);
           setIsAuthenticated(false);
           if (!isAdminRoute) {
             setCurrentScreen('welcome');
           }
         }
-      } catch {
-        api.clearToken();
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 401)) {
+          alert(error instanceof Error ? error.message : 'Koneksi server gagal');
+        }
         setUser(null);
         setIsAuthenticated(false);
         if (!isAdminRoute) {
@@ -221,7 +215,10 @@ export default function App() {
 
   // Handle logout
   const handleLogout = async () => {
-    await api.logout();
+    try { await api.logout(); } catch (error) { alert(error instanceof Error ? error.message : 'Logout gagal'); return; }
+    setIsAdminAuthorized(false);
+    clearCategoryCache();
+    setScannedData({});
     setUser(null);
     setWallets([]);
     setTransactions([]);
@@ -251,7 +248,7 @@ export default function App() {
   };
 
   const handleScanComplete = (extracted: any) => {
-    setScannedData(extracted);
+    setScannedData({ ...extracted, type: selectedScanType });
     setCurrentScreen('scan_review');
   };
 
@@ -272,6 +269,7 @@ export default function App() {
         category: data.category,
         notes: data.notes,
         items: data.items,
+        receiptImage: settings.hasReceiptStorage ? scannedData.imageDataUrl : undefined,
       });
 
       if (res.success) {
@@ -279,21 +277,9 @@ export default function App() {
         if (res.wallets) setWallets(res.wallets);
         setTransactions((prev) => [res.transaction, ...prev]);
       }
-    } catch {
-      const mockTx: Transaction = {
-        id: 'tx-' + Date.now(),
-        type: data.type || selectedScanType,
-        walletId: targetWalletId,
-        merchant: data.merchant,
-        amount: data.amount,
-        date: data.date,
-        category: data.category,
-        notes: data.notes,
-        items: data.items,
-        createdAt: new Date().toISOString(),
-      };
-      setLastSavedTransaction(mockTx);
-      setTransactions((prev) => [mockTx, ...prev]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Transaksi gagal disimpan');
+      return;
     }
 
     setCurrentScreen('scan_success');
@@ -307,14 +293,9 @@ export default function App() {
         if (res.wallets) setWallets(res.wallets);
         setTransactions((prev) => [res.transaction, ...prev]);
       }
-    } catch {
-      const mockTx: Transaction = {
-        id: 'tx-' + Date.now(),
-        ...data,
-        createdAt: new Date().toISOString(),
-      };
-      setLastSavedTransaction(mockTx);
-      setTransactions((prev) => [mockTx, ...prev]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Transaksi gagal disimpan');
+      return;
     }
 
     setCurrentScreen('scan_success');
@@ -329,12 +310,9 @@ export default function App() {
           setSelectedScanWalletId(res.wallet.id);
         }
       }
-    } catch {
-      const fallbackW: Wallet = { id: 'w-' + Date.now(), ...newW };
-      setWallets((prev) => [...prev, fallbackW]);
-      if (!selectedScanWalletId) {
-        setSelectedScanWalletId(fallbackW.id);
-      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Kas gagal disimpan');
+      return;
     }
     setCurrentScreen('wallets');
   };
@@ -353,12 +331,8 @@ export default function App() {
       if (selectedScanWalletId === id) {
         setSelectedScanWalletId(updatedList[0]?.id || '');
       }
-    } catch {
-      const updatedList = wallets.filter((w) => w.id !== id);
-      setWallets(updatedList);
-      if (selectedScanWalletId === id) {
-        setSelectedScanWalletId(updatedList[0]?.id || '');
-      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Kas gagal dihapus');
     }
   };
 
@@ -367,17 +341,17 @@ export default function App() {
       const res = await api.deleteTransaction(id);
       setTransactions((prev) => prev.filter((t) => t.id !== id));
       if (res.wallets) setWallets(res.wallets);
-    } catch {
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Transaksi gagal dihapus');
     }
   };
 
-  const handleTriggerDownload = (format: 'pdf' | 'xlsx' | 'csv') => {
-    setDownloadedFormat(format);
-    if (format === 'csv') {
-      window.open(`/api/export/report?format=csv&token=${api.getToken() || ''}`, '_blank');
-    }
-    setCurrentScreen('report_downloaded');
+  const handleTriggerDownload = async (format: 'pdf' | 'xlsx' | 'csv', rows: Transaction[] = transactions) => {
+    try {
+      await downloadReport(format, rows, wallets);
+      setDownloadedFormat(format);
+      setCurrentScreen('report_downloaded');
+    } catch (error) { alert(error instanceof Error ? error.message : 'Unduhan gagal'); }
   };
 
   const handleUpdateProfile = async (name: string, email: string) => {
@@ -387,7 +361,7 @@ export default function App() {
         setUser(res.user);
       }
     } catch (err) {
-      console.warn('Update profile error:', err);
+      alert(err instanceof Error ? err.message : 'Profil gagal disimpan');
     }
   };
 
@@ -403,7 +377,7 @@ export default function App() {
     );
   }
 
-  // Dedicated Admin Screen (/admin) - guarded by master PIN authorization
+  // The server verifies the session and role on EVERY admin API request.
   if (currentScreen === 'admin') {
     if (!isAdminAuthorized) {
       return (
@@ -425,6 +399,9 @@ export default function App() {
   }
 
   // Not authenticated: always show Welcome/Login Screen
+  if (currentScreen === 'privacy' || currentScreen === 'terms') {
+    return <LegalScreen type={currentScreen} onBack={() => setCurrentScreen(isAuthenticated ? 'dashboard' : 'welcome')} />;
+  }
   if (!isAuthenticated || !user || currentScreen === 'welcome') {
     return (
       <>
@@ -540,22 +517,15 @@ export default function App() {
               <ProfileSettingsScreen
                 user={activeUser}
                 settings={settings}
-                onSaveSettings={(newSettings) => {
-                  setSettings((prev) => {
-                    const updated = { ...prev, ...newSettings };
-                    try {
-                      localStorage.setItem('uangku_app_settings', JSON.stringify(updated));
-                    } catch {}
-                    api.updateSettings(newSettings).catch(() => {});
-                    return updated;
-                  });
+                onSaveSettings={async (newSettings) => {
+                  try { const res = await api.updateSettings(newSettings); setSettings(res.settings); }
+                  catch (error) { alert(error instanceof Error ? error.message : 'Pengaturan gagal disimpan'); }
                 }}
                 onNavigate={(s) => handleNavigate(s)}
                 onOpenAiSettings={() => setIsAiSettingsOpen(true)}
                 onUpdateUser={handleUpdateProfile}
                 onResetDemoData={async () => {
-                  setTransactions([]);
-                  setWallets((prev) => prev.map((w) => ({ ...w, balance: 0 })));
+                  alert('Data tersimpan di D1. Hapus transaksi satu per satu; reset data palsu telah dinonaktifkan.');
                 }}
                 onLogout={handleLogout}
               />
@@ -580,8 +550,6 @@ export default function App() {
             {currentScreen === 'scan_camera' && (
               <CameraScanScreen
                 receiptType={selectedScanType}
-                geminiApiKey={settings.geminiApiKey}
-                openaiApiKey={settings.openaiApiKey}
                 onClose={() => setCurrentScreen('dashboard')}
                 onScanComplete={handleScanComplete}
               />
@@ -615,25 +583,18 @@ export default function App() {
                 onShare={() => {
                   if (navigator.share) {
                     navigator.share({
-                      title: 'Laporan Keuangan UANGKU',
-                      text: 'Unduhan laporan keuangan UANGKU',
+                      title: 'UANGKU',
+                      text: 'Aplikasi pencatatan keuangan UANGKU',
                       url: window.location.href,
                     }).catch(() => {});
                   } else {
-                    alert('Tautan laporan disalin ke clipboard');
+                    navigator.clipboard.writeText(window.location.origin).then(()=>alert('Tautan aplikasi disalin')).catch(()=>alert('Tidak dapat menyalin tautan'));
                   }
                 }}
-                onCreateAnother={() => setCurrentScreen('add_transaction')}
+                onCreateAnother={() => setCurrentScreen('reports')}
               />
             )}
 
-            {currentScreen === 'privacy' && (
-              <LegalScreen type="privacy" onBack={() => setCurrentScreen(isAuthenticated ? 'dashboard' : 'welcome')} />
-            )}
-
-            {currentScreen === 'terms' && (
-              <LegalScreen type="terms" onBack={() => setCurrentScreen(isAuthenticated ? 'dashboard' : 'welcome')} />
-            )}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -673,7 +634,10 @@ export default function App() {
         isOpen={isAiSettingsOpen}
         onClose={() => setIsAiSettingsOpen(false)}
         settings={settings}
-        onSave={(newSettings: Partial<AppSettings>) => setSettings((prev) => ({ ...prev, ...newSettings }))}
+        onSave={async (newSettings: Partial<AppSettings>) => {
+          const res = await api.updateSettings(newSettings);
+          setSettings(res.settings);
+        }}
       />
 
       <SecretAdminModal
