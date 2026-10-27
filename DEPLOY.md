@@ -173,6 +173,8 @@ Jika branch revisi sudah digabung, gunakan branch kerja/PR baru, bukan menimpa h
 
 Pilih **Pages**, bukan Worker-only dengan perintah `wrangler deploy`. Folder `functions/` berada di root repo dan diproses otomatis oleh Pages. Jangan memindahkannya ke `dist/` dan jangan mengunggah ZIP `dist` lewat dashboard: itu bukan alur Git Functions yang dipakai panduan ini.
 
+Routing `/admin`, `/privacy`, dan `/terms` memakai fallback SPA bawaan Pages (tidak ada top-level `404.html`). Jangan menambahkan aturan `/* /index.html 200` lama: normalisasi URL Pages dapat membuat aturan itu terdeteksi sebagai loop. `/api/*` ditangani catch-all Functions dan tetap menghasilkan JSON/error API, bukan halaman HTML.
+
 ### Project yang sudah ada
 
 Periksa **Settings → Builds / Git integration**: repo yang benar, production branch `main`, build `npm run build`, output `dist`, Node 24, automatic deployments aktif. Setelah merge, cek deployment menggunakan commit revisi terbaru.
