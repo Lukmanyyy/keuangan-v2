@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run build && wrangler pages dev dist",
+    "dev": "npm run build && wrangler pages dev dist --config wrangler.local.toml",
     "dev:ui": "vite --host 127.0.0.1",
     "build": "vite build",
     "start": "npm run dev",
@@ -12,8 +12,7 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test src/utils/*.test.ts tests/*.test.ts",
     "test:cloudflare": "tsx scripts/smoke.ts",
-    "db:local": "wrangler d1 migrations apply DB --local",
-    "db:remote": "wrangler d1 migrations apply DB --remote"
+    "db:local": "wrangler d1 migrations apply DB --local --config wrangler.local.toml"
   },
   "dependencies": {
     "jose": "^6.1.0",

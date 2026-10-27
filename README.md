@@ -4,9 +4,9 @@ Pencatatan keuangan React/Vite dengan **Cloudflare Pages + Pages Functions + D1 
 
 ## Mulai di sini
 
-**[Panduan deploy lengkap: DEPLOY.md](DEPLOY.md)** — pembuatan database, migration, konfigurasi binding, secrets AI, Google login, admin, domain, backup, dan troubleshooting.
+**[Panduan deploy lewat WEB Cloudflare: DEPLOY.md](DEPLOY.md)** — tanpa terminal: pembuatan database, SQL Console, binding, secrets AI, Google login, admin, domain, dan troubleshooting.
 
-> ID database di `wrangler.toml` masih placeholder. Ganti dengan ID D1 milik akun Cloudflare Anda sebelum deployment. Jangan langsung menggabungkan branch ke production sebelum database siap.
+> Semua binding dan variabel production/preview diatur melalui dashboard Cloudflare, bukan file repo. `wrangler.local.toml` hanya untuk development lokal dan tidak dipakai deployment Git Pages. Siapkan database sebelum menggabungkan revisi ke production.
 
 ## Fitur
 
@@ -56,7 +56,7 @@ migrations/                Skema D1, indeks, dan trigger saldo
 src/                       React, kategori, API client, laporan
 tests/                     Tes keamanan, SQLite/API, dan utilitas keuangan
 scripts/smoke.ts            Smoke test HTTP dengan workerd/D1 lokal
-wrangler.toml              Sumber konfigurasi binding production/preview
+wrangler.local.toml        Konfigurasi development lokal saja
 DEPLOY.md                  Tutorial operasional
 ```
 

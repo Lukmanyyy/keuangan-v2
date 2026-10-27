@@ -1,334 +1,258 @@
-# Tutorial deploy UANGKU: Cloudflare tanpa VPS
+# Deploy UANGKU lewat WEB Cloudflare — tanpa terminal dan tanpa VPS
 
-Arsitektur: **GitHub → Cloudflare Pages (React + Functions) → D1**, ditambah **R2 privat** untuk arsip foto dan **Gemini/OpenAI** untuk scan. Tidak perlu MySQL, Nginx, PM2, atau server Express.
+Semua pengaturan produksi dilakukan di website Cloudflare: database, binding, API key, dan build. Tidak perlu menjalankan Git/Node/Wrangler di komputer untuk deploy.
 
-Ikuti urutan ini. Membuat database/binding saja tidak menjalankan migration. Jangan memasukkan password, API key, atau backup database ke GitHub.
+**Satu hal yang tetap perlu disalin:** SQL pembuat tabel, ditempel ke **D1 Console** di website Cloudflare. Membuat database kosong dan mengaitkan binding belum otomatis membuat tabel.
 
-## 1. Persiapan
+Arsitektur: GitHub → **Cloudflare Pages + Functions → D1**, dengan **R2 privat** opsional untuk foto struk. Gemini/OpenAI hanya digunakan saat scan.
 
-- Akun GitHub yang dapat mengubah repo ini.
-- Akun Cloudflare dengan akses Pages, D1, dan opsional R2.
-- Git dan Node.js 24 LTS di komputer. Tidak perlu komputer terus menyala setelah deploy.
-- API key AI untuk scan; scan tidak tersedia jika key tidak diisi.
-- Google Cloud project jika ingin login Google; login email/password tetap tersedia tanpa Google.
+## 1. Gunakan kode revisi yang benar
 
-Jika sudah ada deployment Pages, **gunakan project yang sama**, tidak perlu membuat project duplikat.
+Revisi tersedia di branch **`feat/cloudflare-fullstack`**. Siapkan database dan pengaturan berikut pada project Pages yang sudah ada sebelum menggabungkan revisi ke `main`.
 
-### Mengambil kode revisi
+Anda bisa mengelola perubahan/merge melalui website GitHub; tidak perlu terminal. Setelah merge, Cloudflare yang sudah terhubung ke `main` akan otomatis build dan deploy.
 
-Selama revisi belum digabung, gunakan branch `feat/cloudflare-fullstack`. Setelah merge, gunakan `main`.
+**Penting:** repo sengaja tidak memiliki `wrangler.toml`/`wrangler.json` sebagai konfigurasi deployment. `wrangler.local.toml` hanya dipakai pengembang ketika menjalankan tes lokal dan tidak perlu diedit untuk deploy lewat dashboard.
 
-```sh
-git clone https://github.com/Lukmanyyy/keuangan-v2.git
-cd keuangan-v2
-git switch feat/cloudflare-fullstack
-npm ci
+Jika sudah terlanjur deploy versi dengan file Wrangler production sebelumnya, deployment revisi ini menghapus kontrol file tersebut. Sesudah deployment baru selesai, buka ulang Settings; Cloudflare mempertahankan konfigurasi deployment terakhir dan Anda dapat mengelolanya kembali lewat dashboard. Periksa binding agar tidak masih menunjuk placeholder.
+
+## 2. Buat database D1 melalui dashboard
+
+1. Buka https://dash.cloudflare.com/ dan pilih akun yang memiliki project Pages.
+2. Buka **Storage & Databases → D1 SQL Database**.
+3. Klik **Create database**.
+4. Nama: `uangku-db`.
+5. Jika tersedia, pilih location hint dekat pengguna Indonesia. Ini hint geografis, bukan jaminan kota tertentu.
+6. Klik **Create**.
+
+**Sudah ada database/tabel versi lama?** Jangan hapus atau menimpa data. Buat database baru, misalnya `uangku-db-v2`. Nama database bebas; yang wajib tepat nanti adalah nama binding `DB`. Revisi tidak otomatis mengimpor `data_store.json` atau skema lama.
+
+Jika menggunakan deployment preview, buat database kedua bernama `uangku-db-preview`. Jangan gunakan database production untuk testing preview.
+
+## 3. Buat tabel lewat D1 Console
+
+1. Di GitHub buka file **[migrations/0001_initial.sql](migrations/0001_initial.sql)** pada branch revisi ini.
+2. Klik **Raw**, lalu salin seluruh isinya. Tidak perlu mengubah isinya.
+3. Di Cloudflare buka **D1 → database yang baru dibuat → Console**.
+4. Tempel SQL tersebut, lalu klik **Execute / Run**.
+5. Pastikan tidak ada error. Jika console membatasi multi-statement, jalankan per pernyataan SQL lengkap. Khusus `CREATE TRIGGER ... BEGIN ... END;`, salin satu blok trigger utuh, jangan dipotong pada titik koma di dalam bloknya.
+
+Tabel yang dibuat:
+
+| Tabel | Isi |
+|---|---|
+| `users` | Akun, hash password, identitas Google, role admin |
+| `sessions` | Hash token sesi dan masa berlaku |
+| `wallets` | Dompet dan saldo |
+| `transactions` | Transaksi dan referensi foto struk |
+| `user_settings` | Preferensi serta kategori per akun |
+| `app_settings` | Preferensi provider AI global |
+| `rate_limits` | Pembatasan login dan scan |
+
+SQL juga memasang indeks dan trigger yang memperbarui saldo secara atomik, termasuk pembalikan transfer saat transaksi dihapus. **Jangan menyalin tabel saja dan melewatkan trigger.**
+
+Untuk memeriksa, jalankan di Console:
+
+```sql
+SELECT type, name
+FROM sqlite_master
+WHERE type IN ('table', 'trigger')
+ORDER BY type, name;
 ```
 
-Jika folder repo sudah ada, jangan clone di dalamnya. Buka folder itu, pastikan tidak ada pekerjaan lokal yang belum disimpan, lalu checkout/pull branch yang sesuai. Jangan reset paksa.
+Jalankan SQL awal **sekali saja pada database baru**. Jika muncul `table already exists`, jangan menambahkan `DROP TABLE`. Periksa apakah tabel sudah dibuat atau database berisi versi lama. Bila ragu, gunakan database baru tanpa menghapus database sebelumnya.
 
-## 2. Login Cloudflare dari terminal
+Lakukan langkah yang sama pada database preview jika akan digunakan. Catat bahwa migration `0001_initial.sql` telah diterapkan melalui dashboard. Jangan kelak menjalankan CLI migrations terhadap database yang sama tanpa menyelaraskan pelacakan migration; CLI tidak otomatis mengetahui SQL yang ditempel manual.
 
-```sh
-npx wrangler login
-npx wrangler whoami
-```
+## 4. Hubungkan database ke Pages
 
-Browser akan dibuka. Pilih akun Cloudflare pemilik project dan setujui akses. Tidak perlu mengirim token melalui chat. `whoami` harus menampilkan akun yang benar sebelum melanjutkan.
+Untuk project yang sudah ada:
 
-## 3. Buat D1 production dan preview
-
-Cara terminal:
-
-```sh
-npx wrangler d1 create uangku-db
-npx wrangler d1 create uangku-db-preview
-```
-
-Atau melalui dashboard **Storage & Databases → D1 → Create database**, dengan nama yang sama. Jika tersedia, pilih location hint dekat pengguna Indonesia; ini hint, bukan jaminan kota tertentu.
-
-Catat **Database ID** masing-masing. Jika Wrangler menawarkan menambahkan konfigurasi otomatis, pastikan hasil akhirnya tidak menduplikasi binding `DB`.
-
-**Sudah punya database versi lama?** Jangan hapus atau menjalankan SQL reset. Buat database baru, misalnya `uangku-db-v2` dan `uangku-db-v2-preview`, lalu sesuaikan nama konfigurasi. Revisi ini tidak otomatis memindahkan data lama.
-
-## 4. Isi konfigurasi binding
-
-Edit `wrangler.toml`:
-
-```toml
-name = "keuangan-v2"
-pages_build_output_dir = "./dist"
-compatibility_date = "2026-10-27"
-compatibility_flags = ["nodejs_compat"]
-
-[[d1_databases]]
-binding = "DB"
-database_name = "uangku-db"
-database_id = "ID_DATABASE_PRODUCTION"
-migrations_dir = "migrations"
-
-[[env.preview.d1_databases]]
-binding = "DB"
-database_name = "uangku-db-preview"
-database_id = "ID_DATABASE_PREVIEW"
-migrations_dir = "migrations"
-```
-
-- `name` samakan dengan nama project Pages yang digunakan.
-- Ganti kedua ID placeholder dengan ID asli dari langkah 3.
-- Nama binding harus persis `DB`, huruf besar.
-- ID/nama database bukan password dan boleh berada di repo; isinya tidak otomatis dapat dibaca publik.
-- **File Wrangler menjadi sumber konfigurasi binding.** Jangan membuat konfigurasi dashboard yang bertentangan; deployment berikutnya mengikuti file ini.
-- Production dan Preview jangan menggunakan D1 yang sama.
-
-## 5. Jalankan migration
-
-Uji lokal lebih dahulu:
-
-```sh
-npm run db:local
-npm run lint
-npm test
-npm run build
-```
-
-Lalu buat tabel di database Cloudflare:
-
-```sh
-npx wrangler d1 migrations apply DB --remote
-npx wrangler d1 migrations apply DB --remote --env preview
-```
-
-Periksa nama database pada output sebelum menyetujui. Tabel aplikasi: `users`, `sessions`, `wallets`, `transactions`, `user_settings`, `app_settings`, `rate_limits`, ditambah tabel pelacakan migration milik Wrangler.
-
-Migration juga memasang trigger SQL untuk memastikan perubahan saldo/transaksi atomik dan transfer dibalik dengan benar saat dihapus.
-
-Verifikasi:
-
-```sh
-npx wrangler d1 execute DB --remote --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-```
-
-Jika muncul `table ... already exists`, berhenti: kemungkinan database sudah berisi skema lama atau SQL sudah dijalankan manual. Jangan menambahkan `DROP TABLE`. Backup dan gunakan database baru atau siapkan migration khusus untuk data yang ada.
-
-## 6. R2 untuk foto struk (opsional)
-
-Tanpa R2, akun/dompet/transaksi/scan tetap bekerja; yang disimpan hanya hasil transaksi, **bukan arsip foto**.
-
-Jika ingin foto tersimpan:
-
-1. Buka **R2 Object Storage** di dashboard. Aktifkan layanan dan periksa persyaratan billing jika diminta.
-2. Buat dua bucket **privat**: `uangku-receipts` dan `uangku-receipts-preview`.
-3. Tambahkan/uncomment bagian berikut di `wrangler.toml`:
-
-```toml
-[[r2_buckets]]
-binding = "RECEIPTS_BUCKET"
-bucket_name = "uangku-receipts"
-
-[[env.preview.r2_buckets]]
-binding = "RECEIPTS_BUCKET"
-bucket_name = "uangku-receipts-preview"
-```
-
-4. Jangan aktifkan public `r2.dev` atau public custom domain untuk bucket struk.
-5. Aplikasi mengunggah foto setelah transaksi scan disimpan. Riwayat transaksi memiliki tautan **Lihat struk**, diperiksa berdasarkan pemilik akun.
-
-Tidak perlu membuat S3 access key. Binding R2 memberi akses dari Functions. Foto lama yang tidak pernah disimpan tidak bisa dipulihkan hanya dengan mengaktifkan R2.
-
-## 7. Simpan konfigurasi kode ke GitHub
-
-Setelah ID database dan opsional R2 siap, commit konfigurasi yang sudah benar. Jangan `git add .` jika terdapat file rahasia atau pekerjaan lain yang belum diperiksa.
-
-```sh
-git add wrangler.toml
-git commit -m "chore: configure Cloudflare database bindings"
-git push origin feat/cloudflare-fullstack
-```
-
-Jika branch revisi sudah digabung, gunakan branch kerja/PR baru, bukan menimpa history. Review perubahan dan gabungkan PR ke `main` setelah database remote siap. Jangan push paksa.
-
-**Project Pages yang sudah terhubung `main` akan otomatis deploy saat merge/push ke main.** Siapkan secrets terlebih dahulu (langkah 9) sebelum merge agar fitur AI/Google langsung tersedia.
-
-## 8. Hubungkan repo ke Cloudflare Pages
-
-### Project baru
-
-1. Dashboard → **Workers & Pages → Create application → Pages**.
-2. Pilih **Connect to Git / Import repository**.
-3. Otorisasi GitHub, pilih `Lukmanyyy/keuangan-v2`.
+1. **Workers & Pages → pilih project Pages Anda**.
+2. Buka **Settings → Bindings → Add binding → D1 database**. Pada tampilan lama bisa berada di **Settings → Functions → D1 database bindings**.
+3. Pilih environment **Production**.
 4. Isi:
+
+```text
+Variable / Binding name: DB
+Database: uangku-db (atau database baru yang Anda buat)
+```
+
+5. Simpan.
+6. Untuk **Preview**, tambahkan binding `DB` yang menunjuk `uangku-db-preview`, bukan production. Jika tidak memakai preview, matikan preview builds atau biarkan fitur database preview belum tersedia; jangan mengarahkannya ke data asli.
+
+**`DB` harus persis huruf besar.** Tidak perlu menulis Database ID ke GitHub, membuat username/password database, atau mengatur connection string.
+
+Perubahan binding berlaku pada deployment berikutnya; lakukan redeploy setelah seluruh pengaturan selesai.
+
+### Kalau belum punya project Pages
+
+**Workers & Pages → Create application → Pages → Connect to Git / Import repository**. Otorisasi GitHub, pilih `Lukmanyyy/keuangan-v2`, kemudian gunakan pengaturan build di langkah 7. Setelah project ada, tambahkan binding di Settings.
+
+Pilih **Pages**, bukan Worker-only dengan deploy command `wrangler deploy`. Jangan hanya upload ZIP `dist` melalui dashboard: panduan ini menggunakan Git integration agar folder `functions/` diproses bersama frontend.
+
+## 5. Buat dan kaitkan R2 lewat web (opsional)
+
+Tanpa R2, login/dompet/transaksi/scan tetap berjalan. Yang tidak tersedia adalah arsip foto struk asli.
+
+1. Buka **R2 Object Storage**. Aktifkan layanan jika diminta dan periksa persyaratan billing/biaya.
+2. Klik **Create bucket**, beri nama `uangku-receipts`.
+3. **Biarkan bucket privat.** Jangan aktifkan public `r2.dev` atau public custom domain untuk foto struk.
+4. Buka project Pages → **Settings → Bindings → Add binding → R2 bucket**.
+5. Pada Production, isi:
+
+```text
+Variable / Binding name: RECEIPTS_BUCKET
+Bucket: uangku-receipts
+```
+
+6. Simpan. Jika menggunakan preview, buat bucket `uangku-receipts-preview` dan binding bernama sama di environment Preview.
+
+Tidak perlu membuat S3 access key atau mengubah kode. Setelah redeploy, Profil menampilkan status R2. Foto disimpan saat hasil scan disimpan menjadi transaksi; buka melalui tautan **Lihat struk** di riwayat transaksi. Server memeriksa pemilik akun setiap kali foto diakses.
+
+## 6. Isi variables dan secrets di website Cloudflare
+
+Buka **Pages project → Settings → Variables and Secrets → Add**. Pilih **Production**.
+
+| Nama | Jenis | Nilai / fungsi |
+|---|---|---|
+| `NODE_VERSION` | Plain text | `24` untuk build |
+| `GOOGLE_CLIENT_ID` | Plain text, opsional | Client ID Google Cloud milik Anda |
+| `GEMINI_API_KEY` | **Secret / Encrypt** | Key Gemini untuk scan |
+| `OPENAI_API_KEY` | **Secret / Encrypt**, opsional | Key OpenAI untuk scan/fallback |
+| `GEMINI_MODEL` | Plain text, opsional | Default kode: `gemini-2.5-flash` |
+| `OPENAI_MODEL` | Plain text, opsional | Default kode: `gpt-4o-mini` |
+
+Tambahkan konfigurasi Preview secara terpisah jika dibutuhkan; gunakan key uji/limit rendah. Pastikan model tersedia pada akun provider Anda. Mengisi key tidak otomatis menjamin billing/kuotanya aktif.
+
+- API key hanya ditempel di Cloudflare, **bukan GitHub atau chat**.
+- Jangan memakai nama `VITE_GEMINI_API_KEY` atau `VITE_OPENAI_API_KEY`: variabel `VITE_` dapat masuk JavaScript browser.
+- Tidak perlu `APP_URL`, `ADMIN_PIN`, `JWT_SECRET`, atau `VITE_GOOGLE_CLIENT_ID`.
+- Panel admin hanya memilih provider global dan menampilkan status pemasangan key, tidak menampilkan/menyimpan key asli.
+- Tanpa key AI, scan menampilkan error konfigurasi; transaksi manual tetap bisa dipakai.
+
+## 7. Atur build dan runtime Pages
+
+**Settings → Builds / Build configuration / Git integration**, sesuaikan dengan tampilan dashboard:
 
 | Pengaturan | Nilai |
 |---|---|
-| Project name | Sama dengan `name` di Wrangler |
-| Production branch | `main` (setelah revisi di-merge) |
-| Framework | Vite/React jika tersedia |
+| Repository | `Lukmanyyy/keuangan-v2` |
+| Production branch | `main`, setelah revisi digabung |
+| Automatic production deployments | Aktif |
+| Framework preset | Vite/React jika tersedia |
 | Build command | `npm run build` |
 | Build output directory | `dist` |
 | Root directory | Kosong/root repo |
-| Node version / `NODE_VERSION` | `24` |
+| Node.js | `NODE_VERSION=24` dari langkah 6 |
 
-5. Tambahkan variabel/secrets langkah 9, lalu **Save and Deploy**.
+Jika ada menu **Functions → Compatibility date / Compatibility flags**, gunakan tanggal `2026-10-27` atau tanggal yang sudah didukung runtime Anda, dan tambahkan `nodejs_compat`. Ini pengaturan runtime Functions, bukan variabel bernama `NODE_VERSION`.
 
-Pilih **Pages**, bukan Worker-only dengan perintah `wrangler deploy`. Folder `functions/` berada di root repo dan diproses otomatis oleh Pages. Jangan memindahkannya ke `dist/` dan jangan mengunggah ZIP `dist` lewat dashboard: itu bukan alur Git Functions yang dipakai panduan ini.
+Frontend menggunakan fallback SPA bawaan Pages (tanpa top-level `404.html`). Tidak perlu aturan `/* /index.html 200` yang dapat terdeteksi sebagai loop. Folder `functions/api/[[path]].ts` menangani `/api/*` sehingga error API tetap JSON, bukan halaman HTML.
 
-Routing `/admin`, `/privacy`, dan `/terms` memakai fallback SPA bawaan Pages (tidak ada top-level `404.html`). Jangan menambahkan aturan `/* /index.html 200` lama: normalisasi URL Pages dapat membuat aturan itu terdeteksi sebagai loop. `/api/*` ditangani catch-all Functions dan tetap menghasilkan JSON/error API, bukan halaman HTML.
+## 8. Gabungkan revisi dan deploy
 
-### Project yang sudah ada
+1. Pastikan D1 sudah berisi tabel/trigger dan binding production sudah benar.
+2. Di GitHub buka branch **`feat/cloudflare-fullstack`**.
+3. Klik **Compare & pull request** menuju `main`.
+4. Review perubahan dan hasil **Checks**, lalu merge jika konfigurasi Cloudflare sudah siap.
+5. Buka Cloudflare → project Pages → **Deployments**.
+6. Tunggu deployment commit revisi berstatus **Success**.
 
-Periksa **Settings → Builds / Git integration**: repo yang benar, production branch `main`, build `npm run build`, output `dist`, Node 24, automatic deployments aktif. Setelah merge, cek deployment menggunakan commit revisi terbaru.
+Jika baru mengubah binding/secret setelah deployment selesai, pilih **Retry deployment / Redeploy** pada deployment terbaru. Jangan me-redeploy commit lama yang belum berisi backend revisi.
 
-## 9. Atur variables dan secrets
+Tidak perlu mengunggah file manual, membuka terminal, atau menyalakan komputer terus-menerus. Cloudflare mengambil kode dari GitHub dan menjalankan build.
 
-Buka project Pages → **Settings → Variables and Secrets** untuk secrets dan variabel build. Konfigurasi runtime non-rahasia berada di bagian `[vars]` dan `[env.preview.vars]` dalam `wrangler.toml`, agar tidak bertentangan dengan sumber konfigurasi binding. Preview memiliki konfigurasi sendiri; gunakan key pengujian/limit rendah atau kosongkan layanan opsional.
+## 9. Atur login Google lewat Google Cloud (opsional)
 
-| Nama | Jenis | Fungsi |
-|---|---|---|
-| `NODE_VERSION` | Plain text: `24` | Build Node |
-| `GOOGLE_CLIENT_ID` | Plain text di `[vars]` Wrangler, opsional | Login Google; harus sama dengan Client ID Google Cloud |
-| `GEMINI_API_KEY` | Secret/encrypted | Scan Gemini |
-| `OPENAI_API_KEY` | Secret/encrypted, opsional | Scan/fallback OpenAI |
-| `GEMINI_MODEL` | Plain text di `[vars]` Wrangler | Default `gemini-2.5-flash` |
-| `OPENAI_MODEL` | Plain text di `[vars]` Wrangler | Default `gpt-4o-mini` |
-
-Setelah mengubah konfigurasi, **redeploy** agar deployment baru memakainya. Pastikan model yang dipilih tersedia bagi key/akun Anda.
-
-Jangan memakai `VITE_GEMINI_API_KEY`/`VITE_OPENAI_API_KEY`: awalan `VITE_` bisa memasukkan nilai ke JavaScript browser. Repo ini tidak membutuhkan `APP_URL`, `ADMIN_PIN`, atau `JWT_SECRET`; sesi disimpan di D1 dan cookie hanya berisi token acak.
-
-Panel admin tidak menampilkan API key dan tidak menyimpan key di database/browser. Ia hanya mengatur preferensi provider global. Jika belum ada pengaturan global, preferensi tiap pengguna digunakan.
-
-## 10. Konfigurasi login Google (opsional)
-
-1. Buka Google Cloud Console, buat/pilih project.
-2. Buka **Google Auth Platform** (atau **APIs & Services → OAuth consent screen / Credentials**).
-3. Isi nama aplikasi, email dukungan, audience, dan informasi pengembang. Jika masih Testing, tambahkan test users.
-4. Buat OAuth Client ID bertipe **Web application**.
-5. Tambahkan **Authorized JavaScript origins** sesuai origin nyata:
+1. Buka https://console.cloud.google.com/, buat/pilih project.
+2. Buka **Google Auth Platform**, atau **APIs & Services → OAuth consent screen / Credentials**.
+3. Isi nama aplikasi, email dukungan, audience, dan developer contact. Jika masih Testing, tambahkan test users.
+4. Buat **OAuth Client ID → Web application**.
+5. Pada **Authorized JavaScript origins**, isi origin situs yang benar, misalnya:
 
 ```text
 https://NAMA_PROJECT.pages.dev
 https://uangku.domainkamu.com
-http://localhost:8788
-http://127.0.0.1:8788
 ```
 
-Gunakan origin yang memang dipakai. Jangan memasukkan path `/privacy` atau `/api/auth/google` sebagai JavaScript origin. Client menggunakan tombol Google Identity Services dengan ID token, bukan alur redirect server; tidak perlu membuat client secret di frontend.
+Gunakan alamat nyata Anda, tanpa path `/api`, `/privacy`, atau `/terms`. Client memakai tombol Google Identity Services dengan ID token, bukan alur redirect server; jangan menaruh client secret di frontend.
 
-6. Cantumkan URL privasi `https://DOMAIN/privacy` dan ketentuan `https://DOMAIN/terms` sesuai persyaratan consent/branding Google. Domain dan aplikasi mungkin memerlukan verifikasi Google.
-7. Masukkan Client ID ke `GOOGLE_CLIENT_ID` di bagian `[vars]` `wrangler.toml`; commit/push melalui branch kerja, lalu deploy. Client ID bukan rahasia dan boleh masuk repo. Untuk preview, isi bagian `[env.preview.vars]` dengan client pengujian yang sesuai.
-8. Untuk preview, gunakan origin preview yang terdaftar dan client pengujian. Origin acak tidak otomatis diizinkan Google.
+6. Jika diminta Google, isi URL kebijakan privasi `https://DOMAIN/privacy` dan ketentuan `https://DOMAIN/terms`. Verifikasi domain/aplikasi mungkin diperlukan.
+7. Salin **Client ID** ke `GOOGLE_CLIENT_ID` pada Settings Cloudflare Production.
+8. Redeploy Pages, lalu uji login memakai akun penguji.
 
-Backend memverifikasi signature, issuer, audience, expiry, dan email verified. Mengirim nama/email palsu tidak akan menghasilkan sesi. Jika email sudah terdaftar dengan password, gunakan login password: penggabungan akun Google tidak dilakukan otomatis.
+Server memverifikasi signature, issuer, audience, expiry, dan email verified. Nama/email yang dikirim begitu saja tidak menghasilkan sesi. Email yang sudah memiliki akun password tidak digabung otomatis dengan Google; gunakan login password untuk akun tersebut.
 
-Tanpa konfigurasi Google, aplikasi menampilkan informasi bahwa Google belum tersedia dan tetap menyediakan login email/password.
+Preview membutuhkan origin Google yang didaftarkan juga. Origin preview acak tidak otomatis diizinkan. Tanpa Google, login email/password tetap tersedia.
 
-## 11. Buat administrator pertama
+## 10. Buat administrator pertama melalui D1 Console
 
-1. Buka situs hasil deployment dan daftar akun pemilik. Password minimal 10 dan maksimal 128 karakter. Gunakan password unik.
+1. Buka situs hasil deploy dan daftar akun pemilik. Password unik, **10–128 karakter**.
 2. Buka **D1 → database production → Console**.
-3. Ganti email contoh lalu jalankan:
+3. Ganti email contoh dengan email akun pemilik, lalu jalankan:
 
 ```sql
 UPDATE users SET role='admin' WHERE email='email-pemilik@example.com';
 SELECT id, name, email, role FROM users WHERE email='email-pemilik@example.com';
 ```
 
-4. Pastikan tepat akun pemilik yang berubah menjadi `admin`.
-5. Logout lalu login kembali agar UI memuat role terbaru.
-6. Buka **Profil → Panel admin** atau `/admin`, lalu klik Buka panel.
+4. Pastikan tepat akun yang dimaksud memiliki role `admin`.
+5. Logout/login lagi agar UI memperbarui role.
+6. Buka **Profil → Panel admin** atau `/admin`, lalu Buka panel.
 
-Tidak ada PIN default, hardcoded password, atau pemberian admin otomatis kepada pendaftar pertama. API tetap memeriksa role di server walaupun seseorang membuka URL `/admin` langsung.
+Tidak ada PIN default atau pemberian admin otomatis kepada pendaftar pertama. Pengguna biasa ditolak oleh server walaupun mengetahui URL admin. Admin dapat melihat ringkasan akun, reset password (mencabut seluruh sesi pengguna), menghapus akun, dan mengatur provider global. Password asli dan API key tidak pernah ditampilkan.
 
-Admin dapat melihat ringkasan akun, mengubah provider global, reset password (mencabut semua sesi pengguna), dan menghapus akun/data aktif. Admin tidak dapat melihat password asli atau API key. Jangan berikan role admin ke pengguna umum.
+## 11. Checklist sebelum menggunakan data asli
 
-## 12. Uji deployment sebelum dipakai untuk data asli
+- Buka `https://DOMAIN/api/health`: `success: true`, `database: "ready"`. `receiptStorage: true` jika R2 dipasang.
+- Buat akun uji, tambah dua dompet, buat pemasukan/pengeluaran, lalu refresh.
+- Transfer antar dompet, hapus transfer, pastikan kedua saldo kembali.
+- Logout/login di perangkat lain: data akun yang sama harus tetap ada.
+- Akun lain tidak boleh melihat data/foto akun pertama dan tidak dapat membuka API admin.
+- Tambah kategori dan cek kembali setelah login ulang.
+- Scan foto struk, periksa hasil, koreksi bila perlu, simpan; jika R2 aktif, uji Lihat struk.
+- Uji PDF/XLSX/CSV dari periode yang dipilih serta ekspor JSON di Profil.
+- Periksa **runtime / Functions logs**, bukan build log saja, jika ada error.
 
-1. Buka `https://DOMAIN/api/health`. Harus menghasilkan `success: true` dan `database: "ready"`. `receiptStorage: true` jika R2 dikonfigurasi.
-2. Buat akun penguji, tambah dua dompet.
-3. Tambah pemasukan dan pengeluaran; refresh, pastikan transaksi/saldo tetap ada.
-4. Transfer antar dompet; hapus transfer, pastikan kedua saldo kembali.
-5. Logout/login dari perangkat lain dengan akun yang sama: data harus sama.
-6. Pakai akun berbeda: data tidak boleh bocor antar akun; admin harus ditolak untuk pengguna biasa.
-7. Tambah kategori; login kembali/perangkat lain dan pastikan kategori tersimpan.
-8. Pindai foto struk yang terbaca. Periksa hasil, koreksi jika perlu, simpan.
-9. Jika R2 aktif, buka Lihat struk. Setelah logout atau memakai akun lain, foto harus tidak dapat diakses.
-10. Uji PDF, XLSX, dan CSV dari periode yang dipilih. Ekspor tidak boleh menampilkan periode/nama file contoh lama.
-11. Periksa **Functions logs / runtime logs** jika ada error, bukan hanya build log.
+Health tidak menguji billing/key/kuota AI atau konfigurasi Google. Scan gagal harus menampilkan error, bukan hasil belanja contoh palsu.
 
-`/api/config` dan `/api/health` tidak menguji key/kuota Google atau AI. Scan gagal harus menampilkan error, bukan data Indomaret/Kopi Kenangan palsu.
+## 12. Domain, backup, dan update selanjutnya
 
-## 13. Domain sendiri dan HTTPS
+**Domain:** Pages → **Custom domains → Set up a custom domain**. Ikuti DNS dan tunggu HTTPS aktif. Tambahkan origin domain baru ke Google Cloud. Login ulang di domain baru: cookie tidak pindah dari `pages.dev`, tetapi data D1 tetap sama jika binding sama.
 
-Pages project → **Custom domains → Set up a custom domain**. Ikuti konfigurasi DNS yang diminta Cloudflare dan tunggu status aktif/sertifikat siap. Gunakan URL HTTPS untuk kamera dan cookie Secure.
+**Backup:** sebelum perubahan skema, gunakan fasilitas export/backup D1 atau **Time Travel** yang tersedia pada paket akun Anda. Simpan backup privat, bukan di GitHub. Jika UI tidak menyediakan export file, minta bantuan membuat export terkontrol sebelum migration berisiko; jangan menjalankan reset/drop sebagai pengganti backup. Backup D1 tidak mencakup foto R2; kelola backup/lifecycle bucket terpisah.
 
-Tambahkan origin domain baru ke Google Cloud. Login ulang di domain baru: cookie tidak dipindahkan otomatis dari `pages.dev`, tetapi data D1 tetap sama jika deployment memakai binding yang sama.
+**Update kode:** perubahan GitHub → merge `main` → Cloudflare auto deploy. GitHub Checks sudah disertakan; aktifkan branch protection jika ingin tes wajib lolos sebelum merge.
 
-## 14. Backup, migration berikutnya, dan rollback
-
-Sebelum mengubah skema produksi:
-
-```sh
-npx wrangler d1 export DB --remote --output=backup-uangku.sql
-```
-
-Simpan backup di lokasi privat di luar repo. File ini dapat berisi hash password, transaksi, dan data pribadi. Backup D1 tidak mencakup foto R2; kelola backup/lifecycle R2 terpisah. Periksa juga fasilitas Time Travel D1 sesuai paket dan retensi akun.
-
-Untuk perubahan skema berikutnya, **buat file migration baru**, jangan mengedit migration yang sudah diterapkan. Jalankan di local dan preview sebelum production. Push kode tidak otomatis mengeksekusi migration: langkah ini sengaja manual untuk mencegah perubahan data yang tidak disengaja.
-
-Rollback deployment lewat Pages hanya mengembalikan kode, **bukan database**. Rancang migration kompatibel dengan kode lama/baru dan jangan menjalankan perintah reset/drop terhadap database produksi.
-
-Jika sudah ada `data_store.json` dari versi Express atau tabel README lama: jangan commit/upload file itu ke repo publik. Export/backup secara privat dan siapkan proses import khusus; skema revisi ini berbeda.
-
-## 15. Update harian dan CI
-
-Alur normal: **branch kerja → edit → lint/test/build → PR → merge main → Cloudflare auto deploy**. GitHub Actions sudah disertakan untuk memeriksa lint, tes, build, dan migration lokal; workflow ini tidak menyimpan token Cloudflare atau mengubah database produksi.
-
-Opsional: jadikan Checks sebagai required check dalam branch protection GitHub agar kode gagal tes tidak digabung. Cloudflare Git deployment dan GitHub Checks terpisah; tanpa branch protection, push langsung main tetap dapat memicu deploy sebelum checks selesai.
-
-Untuk uji backend lokal:
-
-```sh
-npm run db:local
-npm run dev
-```
-
-Terminal kedua:
-
-```sh
-npm run test:cloudflare
-```
-
-Ini menggunakan workerd dan D1 lokal, bukan Express. Jangan gunakan `npm run dev:ui` untuk membuktikan login/database berfungsi. Setelah frontend diedit, bangun ulang `npm run build` atau restart `npm run dev`.
+**Update skema:** perubahan kode tidak otomatis menjalankan SQL. Buat migration baru, uji di database preview, backup production, lalu jalankan SQL yang dibutuhkan lewat D1 Console dan catat penerapannya. Jangan menjalankan ulang SQL awal. Rollback deployment Pages hanya mengembalikan kode, bukan database.
 
 ## Troubleshooting
 
-| Gejala | Pemeriksaan |
+| Masalah | Solusi |
 |---|---|
-| `npm ci` gagal | Node 24, gunakan package-lock revisi terbaru; jangan mencampur manifest/lock versi lama |
-| Binding `DB` tidak ditemukan | Pastikan file Wrangler berada di root, ID asli diisi, production/preview tepat; redeploy |
-| `no such table` / health belum siap | Jalankan migration **remote** pada database/environment yang benar; local bukan production |
-| `table already exists` | Ada skema lama/manual; backup dan gunakan database baru atau migration khusus |
-| `/api/*` mengembalikan HTML | Deployment bukan versi Functions terbaru, root repo/output salah, atau hanya upload static dist |
-| Login gagal | Password 10–128 karakter untuk pendaftaran, cookie diaktifkan, domain/origin konsisten, cek runtime logs |
-| Google origin/audience error | Authorized JavaScript origins dan `GOOGLE_CLIENT_ID` harus sesuai origin dan client yang sama |
-| Google belum tersedia | Isi `GOOGLE_CLIENT_ID`, deploy ulang, izinkan script Google; login email tetap tersedia |
-| Scan 503 | Secret provider belum diatur atau provider global dipilih tanpa key yang cocok |
-| Scan 502 | Gambar tidak terbaca, key/model salah, billing/kuota provider, atau provider timeout |
-| Scan 429 | Limit 20/jam per akun atau 200/hari global tercapai; tunggu reset UTC/bucket berikutnya |
-| Kas gagal dihapus | Masih ada transaksi yang merujuk kas tersebut; hapus transaksi terkait terlebih dahulu |
-| Foto tidak tersimpan | R2 belum terpasang ketika transaksi dibuat; cek hasReceiptStorage dan konfigurasi bucket |
-| CPU limit/runtime exceeded | Periksa metrik dan paket Workers; password hashing memerlukan CPU. Pertimbangkan paket berbayar sesuai trafik; jangan melemahkan hashing untuk mengakali limit |
-| Kamera gagal | HTTPS, izin kamera browser/OS; alternatif pilih foto dari galeri |
-| Preview mengubah data production | Binding salah; hentikan preview, pisahkan ID database dan bucket |
+| Binding tidak bisa diedit di dashboard | Pastikan deployment terbaru tidak memiliki `wrangler.toml`/`wrangler.json` production. `wrangler.local.toml` boleh tetap ada |
+| `DB` tidak ditemukan | Tambahkan binding `DB` pada environment yang benar, pilih database, lalu redeploy |
+| Health belum siap / `no such table` | Jalankan seluruh SQL awal pada database yang benar; jangan hanya membuat database kosong |
+| `table already exists` | SQL sudah dijalankan atau ada skema lama; jangan drop tabel, gunakan database baru atau migration khusus |
+| API mengembalikan HTML | Commit revisi belum terdeploy, root/build salah, atau hanya deploy static ZIP tanpa Functions |
+| Login gagal | Cookie aktif, domain konsisten, akun benar, password pendaftaran 10–128 karakter; cek runtime logs |
+| Google error origin/audience | Origin Google Cloud dan `GOOGLE_CLIENT_ID` Cloudflare harus cocok; redeploy |
+| Scan 503 | Secret provider belum diisi atau provider pilihan tidak memiliki key |
+| Scan 502 | Gambar, key, model, billing/kuota, atau timeout provider bermasalah |
+| Scan 429 | Limit 20/jam per akun atau 200/hari global tercapai; tunggu reset bucket waktu berikutnya |
+| Foto tidak tersimpan | R2 belum terpasang saat transaksi dibuat; cek binding dan status Profil |
+| Kas tidak bisa dihapus | Ada riwayat transaksi yang merujuk kas tersebut; hapus transaksi terkait dahulu |
+| Kamera gagal | Gunakan HTTPS dan izinkan kamera; alternatif pilih foto dari galeri |
+| CPU/runtime limit | Periksa metrik/paket Workers. Hashing password membutuhkan CPU; pertimbangkan paket sesuai trafik, jangan melemahkan hashing |
 
-## Biaya, batasan, dan keamanan operasional
+## Batasan dan biaya
 
-- Tanpa VPS **bukan berarti semua layanan gratis tanpa batas**. D1/Functions/R2 punya kuota, billing, dan batas CPU/penyimpanan. AI mengikuti tagihan provider. Pantau penggunaan dan atur budget/alerts.
-- Password menggunakan PBKDF2-SHA256, salt unik, 100.000 iterasi sesuai batas WebCrypto Workers. Sesi 7 hari, cookie HttpOnly/SameSite=Strict dan Secure pada HTTPS. Rate limit dasar tersedia; untuk situs publik dengan trafik besar tambahkan perlindungan abuse/WAF/Turnstile sesuai kebutuhan akun.
-- Akun email/password belum memiliki verifikasi email dan reset email otomatis. Pengguna yang lupa password menghubungi admin. Untuk identitas email terverifikasi, gunakan login Google.
-- Pengaturan notifikasi disimpan, tetapi push notification/scheduler belum diimplementasikan. Tidak ada mode offline atau klaim transaksi berhasil ketika server gagal.
-- Ekspor API CSV/JSON dibatasi 10.000 transaksi per permintaan; pakai rentang tanggal bila lebih besar. UI memuat transaksi bertahap dan ekspor layar laporan mengikuti periode terpilih. JSON export bukan backup penuh akun/sesi/R2.
-- Tidak ada jaminan layanan eksternal selalu aktif. Sebelum go-live, selesaikan checklist langkah 12 dengan akun Cloudflare, Google, AI, dan domain nyata.
+- Tanpa VPS bukan berarti gratis tanpa batas. D1, Functions, R2, dan provider AI memiliki kuota/biaya; pantau penggunaan dan budget.
+- Password PBKDF2-SHA256 dengan salt unik dan 100.000 iterasi sesuai batas WebCrypto Workers. Cookie HttpOnly, Secure pada HTTPS, SameSite=Strict; sesi 7 hari. Proteksi CSRF dan rate limit dasar tersedia. Untuk situs publik besar pertimbangkan WAF/Turnstile/perlindungan abuse tambahan.
+- Login email/password belum memiliki verifikasi email/reset email otomatis. Lupa password melalui admin; login Google menyediakan identitas email terverifikasi.
+- Preferensi notifikasi disimpan, tetapi layanan push/scheduler belum tersedia. Tidak ada penyimpanan offline atau transaksi sukses palsu saat server gagal.
+- API transaksi memakai pagination; ekspor API CSV/JSON maksimal 10.000 transaksi per permintaan (gunakan rentang tanggal jika lebih). Ekspor layar laporan memakai data yang dimuat browser dan periode yang dipilih.
+- Tes lokal tidak menjamin layanan eksternal aktif. Selesaikan checklist dengan akun Cloudflare, Google, AI, serta domain nyata sebelum go-live.
 
-Referensi: [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/), [Pages Wrangler config](https://developers.cloudflare.com/pages/functions/wrangler-configuration/), [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/), [R2](https://developers.cloudflare.com/r2/).
+Referensi: [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/) · [D1 dashboard](https://developers.cloudflare.com/d1/get-started/) · [Pages configuration](https://developers.cloudflare.com/pages/functions/wrangler-configuration/).
