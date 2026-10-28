@@ -199,11 +199,14 @@ Preview membutuhkan origin Google yang didaftarkan juga. Origin preview acak tid
 7. Pada login pertama yang berhasil, server membuat akun beserta pengaturannya dengan role `admin` di D1. Jika email sudah memiliki akun, ID/data dompet tetap dipertahankan, password diganti dengan hash secret, dan seluruh sesi serta tautan Google lama dicabut agar tidak ikut mendapat hak admin.
 8. Buka **Profil → Panel admin** setelah login. Panel dibuka di dalam aplikasi tanpa mengubah URL. Alamat lama `/admin` (termasuk subpath) dialihkan ke beranda; hash `#admin` tidak membuka panel. Refresh atau membuka ulang website mengembalikan pengguna ke dashboard, bukan panel.
 
+**Shortcut logo tetap tersedia:** ketuk logo/tulisan **UANGKU di bagian atas 10 kali**, dengan jeda antar ketukan tidak lebih dari 5 detik. Di halaman sebelum login atau pada akun biasa, shortcut membuka form login administrator, bukan memberi akses langsung. Masukkan email/password admin di sana untuk masuk panel. Jika sesi yang sedang aktif sudah admin, 10 ketukan langsung membuka panel. Shortcut bekerja di layar pembuka, formulir masuk/daftar, serta header setelah login; URL tetap tidak berubah menjadi `/admin`.
+
 Tidak perlu daftar akun terlebih dahulu atau menjalankan `UPDATE users`. Database dan tabel D1 tetap harus sudah siap; variabel admin tidak menggantikan pembuatan skema. Bila login masih gagal, periksa `/api/health` dan runtime logs.
 
 **Keamanan dan perubahan pengaturan:**
 
 - Mengetahui/mendaftarkan email admin saja tidak cukup. Akun baru hanya dibuat/dipromosikan setelah secret cocok; pendaftaran publik untuk email yang dikonfigurasi ditolak.
+- Form shortcut menggunakan endpoint login khusus admin. Kredensial pengguna biasa ditolak sebelum sesi baru diterbitkan; sesi akun yang sedang login tidak diganti oleh percobaan tersebut. Rate limit dan pemeriksaan CSRF tetap berlaku.
 - Akun admin konfigurasi harus login dengan password secret, bukan Google atau password lama, termasuk jika memakai alias nama akun.
 - Menyembunyikan URL bukan pengganti otorisasi. Endpoint `/api/admin/*` tetap digunakan aplikasi dan memeriksa sesi serta role admin di server; akun biasa tetap ditolak.
 - Untuk mengganti password admin, ubah `ADMIN_PASSWORD` di Cloudflare, redeploy, lalu **login sekali dengan password baru**. Login berhasil tersebut mencabut sesi-sesi sebelumnya. Mengubah secret saja tidak otomatis mengakhiri cookie sesi yang sudah diterbitkan.

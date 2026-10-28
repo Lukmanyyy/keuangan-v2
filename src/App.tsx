@@ -29,6 +29,7 @@ import { LegalScreen } from './components/screens/LegalScreen';
 import { BottomNav } from './components/BottomNav';
 import { WebHeader } from './components/WebHeader';
 import { AiSettingsModal } from './components/modals/AiSettingsModal';
+import { AdminLoginModal } from './components/modals/AdminLoginModal';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -65,6 +66,7 @@ export default function App() {
   const [selectedScanType, setSelectedScanType] = useState<'pengeluaran' | 'pemasukan'>('pengeluaran');
   const [selectedScanWalletId, setSelectedScanWalletId] = useState<string>('');
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
   // Scanned data cache for review
   const [scannedData, setScannedData] = useState<any>({
@@ -184,10 +186,25 @@ export default function App() {
     setCurrentScreen('dashboard');
   };
 
+  const handleAdminShortcut = () => {
+    if(isAuthenticated && user?.role==='admin') setCurrentScreen('admin');
+    else setIsAdminLoginOpen(true);
+  };
+
+  const handleAdminLoginSuccess = async (admin:User) => {
+    if(admin.role!=='admin')throw new Error('Akses khusus administrator.');
+    setWallets([]);setTransactions([]);clearCategoryCache();setScannedData({});
+    setUser(admin);setIsAuthenticated(true);
+    await loadUserData();
+    setIsAdminLoginOpen(false);
+    setCurrentScreen('admin');
+  };
+
   // Handle logout
   const handleLogout = async () => {
     try { await api.logout(); } catch (error) { alert(error instanceof Error ? error.message : 'Logout gagal'); return; }
     clearCategoryCache();
+    setIsAdminLoginOpen(false);
     setScannedData({});
     setUser(null);
     setWallets([]);
@@ -362,7 +379,10 @@ export default function App() {
   }
   if (!isAuthenticated || !user || currentScreen === 'welcome') {
     return (
-      <WelcomeLoginScreen onLoginSuccess={handleLoginSuccess} />
+      <>
+        <WelcomeLoginScreen onLoginSuccess={handleLoginSuccess} onSecretAdminTrigger={handleAdminShortcut} />
+        {isAdminLoginOpen&&<AdminLoginModal onClose={()=>setIsAdminLoginOpen(false)} onSuccess={handleAdminLoginSuccess}/>}
+      </>
     );
   }
 
@@ -392,7 +412,7 @@ export default function App() {
           onOpenAddModal={() => handleNavigate('add_transaction')}
           onOpenAiSettings={() => setIsAiSettingsOpen(true)}
           onLogout={handleLogout}
-          onSecretAdminTrigger={activeUser.role==='admin'?()=>handleNavigate('admin'):undefined}
+          onSecretAdminTrigger={handleAdminShortcut}
         />
       )}
 
@@ -583,6 +603,8 @@ export default function App() {
           setSettings(res.settings);
         }}
       />
+
+      {isAdminLoginOpen&&<AdminLoginModal onClose={()=>setIsAdminLoginOpen(false)} onSuccess={handleAdminLoginSuccess}/>}
 
     </div>
   );

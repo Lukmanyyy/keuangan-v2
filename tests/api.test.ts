@@ -258,3 +258,29 @@ test('persistent login cookie and database session last 30 days, then expire or 
     assert.equal((await f.call('/auth/me','GET',undefined,account.cookie)).response.status,401);
   }finally{f.sqlite.close();}
 });
+test('dedicated admin login rejects regular users without changing their existing session',async()=>{
+  const f=fixture();try {
+    const member=await f.account('not-admin');
+    const count=f.sqlite.prepare('SELECT count(*) AS n FROM sessions').get()?.n;
+    const denied=await f.call('/auth/admin-login','POST',{email:member.user.email,password:'Safe Password 123'},member.cookie);
+    assert.equal(denied.response.status,403);assert.equal(denied.response.headers.get('Set-Cookie'),null);
+    assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM sessions').get()?.n,count);
+    assert.equal((await f.call('/auth/me','GET',undefined,member.cookie)).data.user.id,member.user.id);
+    f.sqlite.prepare("UPDATE users SET role='admin' WHERE id=?").run(member.user.id);
+    const accepted=await f.call('/auth/admin-login','POST',{email:member.user.email,password:'Safe Password 123'});
+    assert.equal(accepted.response.status,200);assert.equal(accepted.data.user.role,'admin');
+  }finally{f.sqlite.close();}
+});
+test('hidden admin login provisions the configured owner only after verifying their secret',async()=>{
+  const f=fixture();try {
+    f.env.ADMIN_EMAIL='shortcut-owner@example.com';f.env.ADMIN_PASSWORD='owner6';
+    const denied=await f.call('/auth/admin-login','POST',{email:f.env.ADMIN_EMAIL,password:'wrong6'});
+    assert.equal(denied.response.status,401);assert.equal(denied.response.headers.get('Set-Cookie'),null);
+    assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM users').get()?.n,0);
+    const accepted=await f.call('/auth/admin-login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    assert.equal(accepted.response.status,200);assert.equal(accepted.data.user.role,'admin');
+    assert.ok(!JSON.stringify(accepted.data).includes('owner6'));
+    const cookie=accepted.response.headers.get('Set-Cookie')!.split(';')[0];
+    assert.equal((await f.call('/admin/overview','GET',undefined,cookie)).response.status,200);
+  }finally{f.sqlite.close();}
+});

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../../../shared/auth';
+import { createTapCounter } from '../../utils/tapCounter';
 import { User } from '../../types';
 import { Wallet3DIllustration } from '../Wallet3DIllustration';
 import { motion, AnimatePresence } from 'motion/react';
@@ -39,24 +40,10 @@ export const WelcomeLoginScreen: React.FC<WelcomeLoginScreenProps> = ({
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   
   // Secret 10-click trigger for admin
-  const [logoClicks, setLogoClicks] = useState(0);
-  const logoTimerRef = React.useRef<any>(null);
+  const logoTaps = React.useRef(createTapCounter());
 
   const handleLogoSecretClick = () => {
-    const next = logoClicks + 1;
-    setLogoClicks(next);
-    if (logoTimerRef.current) clearTimeout(logoTimerRef.current);
-
-    if (next >= 10) {
-      setLogoClicks(0);
-      if (onSecretAdminTrigger) {
-        onSecretAdminTrigger();
-      }
-    } else {
-      logoTimerRef.current = setTimeout(() => {
-        setLogoClicks(0);
-      }, 3500);
-    }
+    if (logoTaps.current()) onSecretAdminTrigger?.();
   };
   
   // Onboarding Carousel State

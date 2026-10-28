@@ -21,6 +21,7 @@ export interface AdminOverview {
 export const api = {
   register:(name:string,email:string,password:string)=>request<AuthResult>('/api/auth/register','POST',{name,email,password}),
   login:(identifier:string,password?:string)=>request<AuthResult>('/api/auth/login','POST',{email:identifier,password}),
+  loginAdmin:(email:string,password:string)=>request<AuthResult>('/api/auth/admin-login','POST',{email,password}),
   loginGoogle:(credential:string)=>request<AuthResult>('/api/auth/google','POST',{credential}),
   getConfig:()=>request<{success:boolean;googleClientId:string}>('/api/config'),
   getMe:()=>request<AuthResult>('/api/auth/me'),

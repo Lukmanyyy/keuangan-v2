@@ -22,6 +22,7 @@ Pencatatan keuangan React/Vite dengan **Cloudflare Pages + Pages Functions + D1 
 - Admin dengan role D1, reset sandi yang mencabut sesi, serta penghapusan akun.
 - Admin pemilik dapat dibuat otomatis saat login memakai `ADMIN_EMAIL` + secret `ADMIN_PASSWORD` Cloudflare, tanpa SQL pemberian role.
 - Panel admin hanya dibuka dari dalam aplikasi oleh akun admin; URL publik lama dialihkan ke beranda. Otorisasi API tetap diperiksa server.
+- Ketuk logo UANGKU 10 kali untuk form login admin; sesi admin aktif langsung membuka panel, tanpa URL `/admin`.
 - Rate limit autentikasi dan AI, validasi input, proteksi CSRF, dan security headers.
 
 ## Development lokal

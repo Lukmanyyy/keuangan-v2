@@ -172,7 +172,7 @@ async function route(context: Context): Promise<Response> {
     }
     return json({success:true, database:'ready', receiptStorage:!!env.RECEIPTS_BUCKET});
   }
-  if (path.startsWith('/api/auth/') && ['register','login','google'].includes(path.split('/').pop()!) && method==='POST') {
+  if (path.startsWith('/api/auth/') && ['register','login','admin-login','google'].includes(path.split('/').pop()!) && method==='POST') {
     const ip = request.headers.get('CF-Connecting-IP') || 'local';
     await limit(env, `auth:${await digest(ip)}`, 20, 900);
     const b = await body(request);
@@ -188,7 +188,7 @@ async function route(context: Context): Promise<Response> {
       ]);
       return loginResponse(request,env,user);
     }
-    if (path.endsWith('/login')) {
+    if (path.endsWith('/login') || path.endsWith('/admin-login')) {
       const identifier = text(b.email || b.username,'Email / nama',254).toLowerCase();
       requireValue(typeof b.password==='string' && b.password.length>0 && b.password.length<=128,'Kata sandi tidak valid');
       const pass = b.password;
@@ -201,6 +201,7 @@ async function route(context: Context): Promise<Response> {
       const dummy = 'pbkdf2-sha256$100000$dummy$' + '0'.repeat(64);
       const valid = await verifyPassword(pass,user?.password_hash || dummy);
       requireValue(user && valid, 'Email/nama pengguna atau kata sandi salah', 401);
+      if (path.endsWith('/admin-login')) requireValue(user.role==='admin','Akun ini tidak memiliki akses administrator. Gunakan akun admin pemilik.',403);
       return loginResponse(request,env,user);
     }
     requireValue(env.GOOGLE_CLIENT_ID, 'Login Google belum dikonfigurasi', 503);

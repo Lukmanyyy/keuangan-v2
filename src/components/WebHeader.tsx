@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
+import { createTapCounter } from '../utils/tapCounter';
 import {
   Wallet,
   ReceiptText,
@@ -32,28 +33,14 @@ export const WebHeader: React.FC<WebHeaderProps> = ({
   onLogout,
   onSecretAdminTrigger,
 }) => {
-  const [clickCount, setClickCount] = useState(0);
-  const clickTimeoutRef = useRef<any>(null);
+  const logoTaps = useRef(createTapCounter());
 
   const handleLogoClick = () => {
-    onNavigate('dashboard');
-
-    // Secret 10-click trigger for admin access
-    const nextCount = clickCount + 1;
-    setClickCount(nextCount);
-
-    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-
-    if (nextCount >= 10) {
-      setClickCount(0);
-      if (onSecretAdminTrigger) {
-        onSecretAdminTrigger();
-      }
-    } else {
-      clickTimeoutRef.current = setTimeout(() => {
-        setClickCount(0);
-      }, 3500);
+    if (logoTaps.current() && onSecretAdminTrigger) {
+      onSecretAdminTrigger();
+      return;
     }
+    onNavigate('dashboard');
   };
 
   const navLinks = [

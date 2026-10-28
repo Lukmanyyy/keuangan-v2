@@ -13,7 +13,8 @@ async function call(path:string,method='GET',body?:unknown) {
   return {status:res.status,data:await res.json() as any};
 }
 const health=await call('/health');assert.equal(health.status,200);
-const account=await call('/auth/register','POST',{name:'Cloudflare Smoke',email:`smoke-${crypto.randomUUID()}@example.com`,password:crypto.randomUUID()});
+const testPassword=crypto.randomUUID();
+const account=await call('/auth/register','POST',{name:'Cloudflare Smoke',email:`smoke-${crypto.randomUUID()}@example.com`,password:testPassword});
 assert.equal(account.status,200,JSON.stringify(account.data));
 assert.equal((await call('/auth/me')).status,200);
 const wallet=await call('/wallets','POST',{name:'Smoke Cash',balance:100000});assert.equal(wallet.status,201,JSON.stringify(wallet.data));
@@ -34,6 +35,8 @@ if(health.data.receiptStorage) {
   assert.equal((await fetch(url,{headers:{Cookie:cookie}})).status,404);
 }
 assert.equal((await call('/admin/overview')).status,403);
+assert.equal((await call('/auth/admin-login','POST',{email:account.data.user.email,password:testPassword})).status,403);
+assert.equal((await call('/auth/me')).data.user.id,account.data.user.id);
 assert.equal((await call('/settings','POST',{darkMode:true})).status,200);
 assert.equal((await call('/settings')).data.settings.darkMode,true);
 assert.equal((await call('/auth/logout','POST',{})).status,200);
