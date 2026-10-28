@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { csvCell, digest, email, hashPassword, HttpError, money, password, requireValue, text, verifyPassword } from './security';
+import { csvCell, digest, email, hashPassword, HttpError, money, password, requireValue, secretsEqual, text, verifyPassword } from './security';
 import { scanReceipt } from './scan';
 
 export interface Env {
@@ -10,12 +10,15 @@ export interface Env {
   OPENAI_API_KEY?: string;
   GEMINI_MODEL?: string;
   OPENAI_MODEL?: string;
+  ADMIN_EMAIL?: string;
+  ADMIN_PASSWORD?: string;
 }
 type Context = { request: Request; env: Env; waitUntil: (promise: Promise<unknown>) => void };
 type Row = Record<string, any>;
 const GOOGLE_KEYS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 const cookieName = (request: Request) => new URL(request.url).protocol === 'https:' ? '__Host-uangku_session' : 'uangku_session';
 const now = () => new Date().toISOString();
+const adminEmail = (env: Env) => env.ADMIN_EMAIL?.trim().toLowerCase() || null;
 const json = (value: unknown, status = 200, headers: HeadersInit = {}) => Response.json(value, {status, headers});
 const safeUser = (u: Row) => ({id:u.id, name:u.name, email:u.email, avatar:u.avatar, role:u.role});
 const walletView = (w: Row) => ({id:w.id, name:w.name, balance:w.balance, color:w.color, icon:w.icon, isDefault:!!w.is_default});
@@ -58,12 +61,21 @@ async function limit(env: Env, key: string, max: number, seconds: number) {
     ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count`).bind(`${key}:${bucket}`, (bucket+1)*seconds).first<Row>();
   requireValue(row && row.count <= max, 'Terlalu banyak permintaan. Coba lagi nanti.', 429);
 }
+async function checkManagedAdmin(env: Env, user: Row) {
+  if (user.role!=='admin') return;
+  const managed = await env.DB.prepare("SELECT value FROM app_settings WHERE key='env_admin_user_id'").first<Row>();
+  if (managed?.value!==user.id) return;
+  requireValue(user.email.toLowerCase()===adminEmail(env) && typeof env.ADMIN_PASSWORD==='string' &&
+    env.ADMIN_PASSWORD.length>=12 && env.ADMIN_PASSWORD.length<=128 && env.ADMIN_PASSWORD.trim().length>0,
+    'Akses admin konfigurasi sudah dinonaktifkan atau berubah. Periksa konfigurasi pemilik dan login ulang.',401);
+}
 async function auth(request: Request, env: Env): Promise<Row> {
   const token = sessionToken(request);
   requireValue(/^[a-f0-9]{64}$/.test(token), 'Silakan login terlebih dahulu', 401);
   const user = await env.DB.prepare(`SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>?`).bind(await digest(token), Math.floor(Date.now()/1000)).first<Row>();
   requireValue(user, 'Sesi berakhir. Silakan login kembali.', 401);
+  await checkManagedAdmin(env,user);
   await env.DB.prepare('UPDATE users SET last_active_at=? WHERE id=? AND last_active_at<?')
     .bind(now(), user.id, new Date(Date.now()-300000).toISOString()).run();
   return user;
@@ -76,6 +88,31 @@ async function loginResponse(request: Request, env: Env, user: Row) {
     env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(await digest(token), user.id, Math.floor(Date.now()/1000)+604800),
   ]);
   return json({success:true, user:safeUser(user)}, 200, {'Set-Cookie':cookie(request,token)});
+}
+async function loginConfiguredAdmin(request: Request, env: Env, pass: string) {
+  const address = adminEmail(env);
+  const secret = env.ADMIN_PASSWORD;
+  requireValue(address && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) && address.length<=254,
+    'ADMIN_EMAIL belum valid. Periksa Variables and Secrets di Cloudflare.',503);
+  requireValue(typeof secret==='string' && secret.length>=12 && secret.length<=128 && secret.trim().length>0,
+    'ADMIN_PASSWORD harus diatur sebagai secret dengan 12–128 karakter. Redeploy setelah menyimpan.',503);
+  requireValue(await secretsEqual(pass,secret),'Email/nama pengguna atau kata sandi salah',401);
+  // Only proof of the deployment secret can create/promote this account.
+  // Existing sessions and Google links cannot inherit the newly granted privileges.
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO users(id,name,email,password_hash,avatar,role,created_at,last_active_at)
+      VALUES(?,?,?,?,?,'admin',?,?) ON CONFLICT(email) DO UPDATE SET
+      password_hash=excluded.password_hash,role='admin',google_sub=NULL,last_active_at=excluded.last_active_at`)
+      .bind(crypto.randomUUID(),'Administrator',address,await hashPassword(secret),'A',now(),now()),
+    env.DB.prepare('INSERT OR IGNORE INTO user_settings(user_id) SELECT id FROM users WHERE email=?').bind(address),
+    env.DB.prepare("UPDATE users SET role='user' WHERE id=(SELECT value FROM app_settings WHERE key='env_admin_user_id') AND email<>?").bind(address),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id=(SELECT value FROM app_settings WHERE key='env_admin_user_id')"),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE email=?)').bind(address),
+    env.DB.prepare("INSERT INTO app_settings(key,value) SELECT 'env_admin_user_id',id FROM users WHERE email=? ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(address),
+  ]);
+  const user = await env.DB.prepare('SELECT * FROM users WHERE email=?').bind(address).first<Row>();
+  requireValue(user,'Akun administrator gagal disiapkan. Periksa D1.',503);
+  return loginResponse(request,env,user);
 }
 async function wallets(env: Env, userId: string) {
   const {results} = await env.DB.prepare('SELECT * FROM wallets WHERE user_id=? ORDER BY created_at,id').bind(userId).all<Row>();
@@ -140,6 +177,7 @@ async function route(context: Context): Promise<Response> {
     const b = await body(request);
     if (path.endsWith('/register')) {
       const name = text(b.name,'Nama',80); const address = email(b.email); const pass = password(b.password);
+      requireValue(address!==adminEmail(env),'Email ini dikelola pemilik. Gunakan menu Masuk dengan password admin.',409);
       const user = {id:crypto.randomUUID(),name,email:address,avatar:name.charAt(0).toUpperCase(),role:'user'};
       requireValue(!await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(address).first(), 'Email sudah terdaftar', 409);
       await env.DB.batch([
@@ -155,6 +193,9 @@ async function route(context: Context): Promise<Response> {
       const pass = b.password;
       const user = await env.DB.prepare('SELECT * FROM users WHERE email=? OR lower(name)=? ORDER BY CASE WHEN email=? THEN 0 ELSE 1 END LIMIT 1')
         .bind(identifier,identifier,identifier).first<Row>();
+      const owner = adminEmail(env);
+      if (owner && (identifier===owner || user?.email.toLowerCase()===owner)) return loginConfiguredAdmin(request,env,pass);
+      if (user) await checkManagedAdmin(env,user);
       // Equal-cost derivation for unknown accounts reduces account enumeration via timing.
       const dummy = 'pbkdf2-sha256$100000$dummy$' + '0'.repeat(64);
       const valid = await verifyPassword(pass,user?.password_hash || dummy);
@@ -168,6 +209,7 @@ async function route(context: Context): Promise<Response> {
     catch { throw new HttpError(401,'Kredensial Google tidak valid atau kedaluwarsa'); }
     requireValue(payload.email_verified===true && typeof payload.sub==='string', 'Email Google belum diverifikasi', 401);
     const address = email(payload.email);
+    requireValue(address!==adminEmail(env),'Akun admin ini menggunakan ADMIN_PASSWORD. Gunakan login email dan password.',403);
     let user = await env.DB.prepare('SELECT * FROM users WHERE google_sub=?').bind(payload.sub).first<Row>();
     if (!user) {
       requireValue(!await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(address).first(),
@@ -349,7 +391,9 @@ async function route(context: Context): Promise<Response> {
     }
     if (path==='/api/admin/reset-password' && method==='POST') {
       const b = await body(request); const userId = text(b.userId,'Pengguna',80); const pass = password(b.newPassword);
-      requireValue(await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(userId).first(),'Pengguna tidak ditemukan',404);
+      const target = await env.DB.prepare('SELECT id,email FROM users WHERE id=?').bind(userId).first<Row>();
+      requireValue(target,'Pengguna tidak ditemukan',404);
+      requireValue(target.email.toLowerCase()!==adminEmail(env),'Password akun ini dikelola melalui secret ADMIN_PASSWORD di Cloudflare. Ubah secret lalu login ulang.');
       await env.DB.batch([
         env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await hashPassword(pass),userId),
         env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
@@ -366,8 +410,9 @@ async function route(context: Context): Promise<Response> {
     if (/^\/api\/admin\/users\/[^/]+$/.test(path) && method==='DELETE') {
       const id = decodeURIComponent(path.split('/').pop()!);
       requireValue(id!==user.id,'Tidak dapat menghapus akun admin sendiri');
-      const target = await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(id).first();
+      const target = await env.DB.prepare('SELECT id,email FROM users WHERE id=?').bind(id).first<Row>();
       requireValue(target,'Pengguna tidak ditemukan',404);
+      requireValue(target.email.toLowerCase()!==adminEmail(env),'Akun admin konfigurasi tidak dapat dihapus melalui panel. Kelola ADMIN_EMAIL di Cloudflare terlebih dahulu.');
       const {results} = await env.DB.prepare('SELECT receipt_key FROM transactions WHERE user_id=? AND receipt_key IS NOT NULL').bind(id).all<Row>();
       await env.DB.batch([
         env.DB.prepare('DELETE FROM transactions WHERE user_id=?').bind(id),

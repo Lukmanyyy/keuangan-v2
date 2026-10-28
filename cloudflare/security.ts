@@ -27,6 +27,12 @@ const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toS
 export async function digest(value: string) {
   return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
 }
+export async function secretsEqual(actual: string, expected: string) {
+  const [a,b] = await Promise.all([digest(actual),digest(expected)]);
+  let difference = 0;
+  for (let i=0; i<a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return difference === 0;
+}
 async function derive(value: string, salt: string) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(value), 'PBKDF2', false, ['deriveBits']);
   // Workers WebCrypto supports at most 100,000 PBKDF2 iterations.

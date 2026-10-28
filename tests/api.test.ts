@@ -154,3 +154,69 @@ test('health reports the failing table without exposing database errors publicly
     assert.ok(!JSON.stringify(result.data).includes('no such table'));
   }finally{f.sqlite.close();}
 });
+test('environment admin is provisioned only after a correct secret login',async()=>{
+  const f=fixture();try {
+    f.env.ADMIN_EMAIL=' OWNER@example.com ';
+    f.env.ADMIN_PASSWORD='Owner secret password 123!';
+    assert.equal((await f.call('/auth/register','POST',{name:'Impostor',email:'owner@example.com',password:'Some password 123'})).response.status,409);
+    assert.equal((await f.call('/auth/login','POST',{email:'owner@example.com',password:'wrong'})).response.status,401);
+    assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM users').get()?.n,0);
+    const login=await f.call('/auth/login','POST',{email:'OWNER@example.com',password:f.env.ADMIN_PASSWORD});
+    assert.equal(login.response.status,200);assert.equal(login.data.user.role,'admin');
+    assert.equal(login.data.user.email,'owner@example.com');
+    const cookie=login.response.headers.get('Set-Cookie')!.split(';')[0];
+    const overview=await f.call('/admin/overview','GET',undefined,cookie);assert.equal(overview.response.status,200);
+    assert.ok(!JSON.stringify(overview.data).includes(f.env.ADMIN_PASSWORD));
+    const row=f.sqlite.prepare('SELECT password_hash FROM users WHERE email=?').get('owner@example.com')!;
+    assert.ok(String(row.password_hash).startsWith('pbkdf2-sha256$'));
+    assert.ok(!String(row.password_hash).includes(f.env.ADMIN_PASSWORD));
+    assert.equal((await f.call('/admin/reset-password','POST',{userId:login.data.user.id,newPassword:'Not the secret 123'},cookie)).response.status,400);
+  }finally{f.sqlite.close();}
+});
+test('environment admin promotion revokes existing sessions and removes old Google links',async()=>{
+  const f=fixture();try {
+    const existing=await f.account('reserved');
+    f.sqlite.prepare('UPDATE users SET google_sub=? WHERE id=?').run('old-google-link',existing.user.id);
+    f.env.ADMIN_EMAIL=existing.user.email;f.env.ADMIN_PASSWORD='Deployment owner secret 123';
+    assert.equal((await f.call('/auth/login','POST',{email:existing.user.email,password:'Safe Password 123'})).response.status,401);
+    assert.equal((await f.call('/auth/login','POST',{email:'reserved',password:'Safe Password 123'})).response.status,401);
+    assert.equal(f.sqlite.prepare('SELECT role FROM users WHERE id=?').get(existing.user.id)?.role,'user');
+    const login=await f.call('/auth/login','POST',{email:existing.user.email,password:f.env.ADMIN_PASSWORD});
+    assert.equal(login.response.status,200);assert.equal(login.data.user.id,existing.user.id);assert.equal(login.data.user.role,'admin');
+    assert.equal((await f.call('/auth/me','GET',undefined,existing.cookie)).response.status,401);
+    assert.equal(f.sqlite.prepare('SELECT google_sub FROM users WHERE id=?').get(existing.user.id)?.google_sub,null);
+  }finally{f.sqlite.close();}
+});
+test('admin secret rotation rejects old credentials and disabling config fails closed',async()=>{
+  const f=fixture();try {
+    f.env.ADMIN_EMAIL='configured@example.com';f.env.ADMIN_PASSWORD='First admin password 123';
+    const first=await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    const oldCookie=first.response.headers.get('Set-Cookie')!.split(';')[0];
+    f.env.ADMIN_PASSWORD='Second admin password 456';
+    assert.equal((await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:'First admin password 123'})).response.status,401);
+    assert.equal((await f.call('/auth/login','POST',{email:'Administrator',password:'First admin password 123'})).response.status,401);
+    const second=await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    assert.equal(second.response.status,200);
+    assert.equal((await f.call('/auth/me','GET',undefined,oldCookie)).response.status,401);
+    const cookie=second.response.headers.get('Set-Cookie')!.split(';')[0];
+    delete f.env.ADMIN_PASSWORD;
+    assert.equal((await f.call('/auth/me','GET',undefined,cookie)).response.status,401);
+    assert.equal((await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:'Second admin password 456'})).response.status,503);
+    delete f.env.ADMIN_EMAIL;
+    assert.equal((await f.call('/auth/login','POST',{email:'configured@example.com',password:'Second admin password 456'})).response.status,401);
+  }finally{f.sqlite.close();}
+});
+test('changing configured admin email disables old access and demotes the previous managed owner',async()=>{
+  const f=fixture();try {
+    f.env.ADMIN_EMAIL='first-owner@example.com';f.env.ADMIN_PASSWORD='Configured owner secret 123';
+    const first=await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    const oldCookie=first.response.headers.get('Set-Cookie')!.split(';')[0];
+    f.env.ADMIN_EMAIL='new-owner@example.com';
+    assert.equal((await f.call('/admin/overview','GET',undefined,oldCookie)).response.status,401);
+    assert.equal((await f.call('/auth/login','POST',{email:'first-owner@example.com',password:f.env.ADMIN_PASSWORD})).response.status,401);
+    const second=await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    assert.equal(second.response.status,200);assert.equal(second.data.user.role,'admin');
+    assert.equal(f.sqlite.prepare('SELECT role FROM users WHERE id=?').get(first.data.user.id)?.role,'user');
+    assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM sessions WHERE user_id=?').get(first.data.user.id)?.n,0);
+  }finally{f.sqlite.close();}
+});

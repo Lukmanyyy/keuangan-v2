@@ -117,6 +117,8 @@ Buka **Pages project → Settings → Variables and Secrets → Add**. Pilih **P
 | Nama | Jenis | Nilai / fungsi |
 |---|---|---|
 | `NODE_VERSION` | Plain text | `24` untuk build |
+| `ADMIN_EMAIL` | Plain text, opsional | Email akun pemilik yang akan dikelola sebagai admin |
+| `ADMIN_PASSWORD` | **Secret / Encrypt**, opsional | Password admin kuat, 12–128 karakter; wajib berpasangan dengan `ADMIN_EMAIL` |
 | `GOOGLE_CLIENT_ID` | Plain text, opsional | Client ID Google Cloud milik Anda |
 | `GEMINI_API_KEY` | **Secret / Encrypt** | Key Gemini untuk scan |
 | `OPENAI_API_KEY` | **Secret / Encrypt**, opsional | Key OpenAI untuk scan/fallback |
@@ -186,22 +188,29 @@ Server memverifikasi signature, issuer, audience, expiry, dan email verified. Na
 
 Preview membutuhkan origin Google yang didaftarkan juga. Origin preview acak tidak otomatis diizinkan. Tanpa Google, login email/password tetap tersedia.
 
-## 10. Buat administrator pertama melalui D1 Console
+## 10. Login administrator lewat Variables and Secrets — tanpa SQL role
 
-1. Buka situs hasil deploy dan daftar akun pemilik. Password unik, **10–128 karakter**.
-2. Buka **D1 → database production → Console**.
-3. Ganti email contoh dengan email akun pemilik, lalu jalankan:
+1. Buka **Pages → project Anda → Settings → Variables and Secrets → Production**.
+2. Tambahkan **`ADMIN_EMAIL`** sebagai Plain text, isi email admin milik Anda.
+3. Tambahkan **`ADMIN_PASSWORD`** sebagai **Secret / Encrypt**, isi password unik dan kuat **12–128 karakter** (disarankan acak 16+ karakter). Tidak ada password bawaan. Jangan kirim nilai password ke chat atau GitHub.
+4. Simpan keduanya lalu **redeploy commit terbaru**. Untuk Preview, konfigurasi terpisah; jangan gunakan password admin production di deployment pengujian.
+5. Buka halaman utama website → **Mulai Sekarang → Masuk** (bukan Daftar).
+6. Login menggunakan email dan password persis sesuai kedua variabel tersebut.
+7. Pada login pertama yang berhasil, server membuat akun beserta pengaturannya dengan role `admin` di D1. Jika email sudah memiliki akun, ID/data dompet tetap dipertahankan, password diganti dengan hash secret, dan seluruh sesi serta tautan Google lama dicabut agar tidak ikut mendapat hak admin.
+8. Buka **Profil → Panel admin**, atau `/admin`, lalu **Buka panel**.
 
-```sql
-UPDATE users SET role='admin' WHERE email='email-pemilik@example.com';
-SELECT id, name, email, role FROM users WHERE email='email-pemilik@example.com';
-```
+Tidak perlu daftar akun terlebih dahulu atau menjalankan `UPDATE users`. Database dan tabel D1 tetap harus sudah siap; variabel admin tidak menggantikan pembuatan skema. Bila login masih gagal, periksa `/api/health` dan runtime logs.
 
-4. Pastikan tepat akun yang dimaksud memiliki role `admin`.
-5. Logout/login lagi agar UI memperbarui role.
-6. Buka **Profil → Panel admin** atau `/admin`, lalu Buka panel.
+**Keamanan dan perubahan pengaturan:**
 
-Tidak ada PIN default atau pemberian admin otomatis kepada pendaftar pertama. Pengguna biasa ditolak oleh server walaupun mengetahui URL admin. Admin dapat melihat ringkasan akun, reset password (mencabut seluruh sesi pengguna), menghapus akun, dan mengatur provider global. Password asli dan API key tidak pernah ditampilkan.
+- Mengetahui/mendaftarkan email admin saja tidak cukup. Akun baru hanya dibuat/dipromosikan setelah secret cocok; pendaftaran publik untuk email yang dikonfigurasi ditolak.
+- Akun admin konfigurasi harus login dengan password secret, bukan Google atau password lama, termasuk jika memakai alias nama akun.
+- Untuk mengganti password admin, ubah `ADMIN_PASSWORD` di Cloudflare, redeploy, lalu **login sekali dengan password baru**. Login berhasil tersebut mencabut sesi-sesi sebelumnya. Mengubah secret saja tidak otomatis mengakhiri cookie sesi yang sudah diterbitkan.
+- Jika `ADMIN_EMAIL` diganti, akses akun admin konfigurasi lama ditolak; login pertama pemilik baru menurunkan role akun terkelola sebelumnya menjadi user dan mencabut sesinya. Data lamanya tidak dihapus.
+- Menghapus pasangan variabel menonaktifkan login/sesi admin terkelola, bukan menghapus datanya. Admin lain yang sengaja diberi role melalui D1 tetap terpisah dari mekanisme ini.
+- Password akun admin terkelola tidak bisa direset dari panel; ubah secret di Cloudflare. Tidak ada PIN default atau pemberian admin kepada pendaftar pertama.
+
+Admin dapat melihat ringkasan akun, reset password pengguna (mencabut seluruh sesi pengguna), menghapus akun pengguna, dan mengatur provider global. Password asli dan API key tidak pernah ditampilkan. Cara SQL untuk memberi role admin ke akun lain tetap didukung jika memang dibutuhkan, tetapi tidak wajib untuk pemilik yang memakai variabel.
 
 ## 11. Checklist sebelum menggunakan data asli
 

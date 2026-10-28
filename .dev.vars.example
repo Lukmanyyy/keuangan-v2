@@ -3,3 +3,6 @@ GEMINI_API_KEY=""
 OPENAI_API_KEY=""
 GEMINI_MODEL="gemini-2.5-flash"
 OPENAI_MODEL="gpt-4o-mini"
+# Optional admin login (12–128 characters; set actual values only in .dev.vars).
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""

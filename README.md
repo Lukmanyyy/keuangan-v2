@@ -19,6 +19,7 @@ Pencatatan keuangan React/Vite dengan **Cloudflare Pages + Pages Functions + D1 
 - Scan struk Gemini/OpenAI di server, tanpa hasil contoh saat API gagal.
 - Laporan PDF/XLSX/CSV berdasarkan periode yang dipilih, serta ekspor JSON transaksi.
 - Admin dengan role D1, reset sandi yang mencabut sesi, serta penghapusan akun.
+- Admin pemilik dapat dibuat otomatis saat login memakai `ADMIN_EMAIL` + secret `ADMIN_PASSWORD` Cloudflare, tanpa SQL pemberian role.
 - Rate limit autentikasi dan AI, validasi input, proteksi CSRF, dan security headers.
 
 ## Development lokal
