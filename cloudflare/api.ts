@@ -115,11 +115,23 @@ async function route(context: Context): Promise<Response> {
   }
   requireValue(env.DB, 'Binding database DB belum dikonfigurasi', 503);
   if (path === '/api/health' && method === 'GET') {
-    try {
-      for (const table of ['users','sessions','wallets','transactions','user_settings','app_settings','rate_limits']) {
+    requireValue(typeof env.DB.prepare === 'function', 'Binding DB bukan database D1. Periksa jenis binding di Cloudflare.', 503);
+    const checks: Array<{table:string;status:'ready'|'missing_table'|'query_failed'}> = [];
+    const diagnosticId = crypto.randomUUID();
+    for (const table of ['users','sessions','wallets','transactions','user_settings','app_settings','rate_limits']) {
+      try {
         await env.DB.prepare(`SELECT 1 FROM ${table} LIMIT 1`).first();
+        checks.push({table,status:'ready'});
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        checks.push({table,status:/no such table/i.test(detail)?'missing_table':'query_failed'});
+        // Only static schema probes are logged here: no user values, tokens, or secrets.
+        console.error('D1 health check failed',{diagnosticId,table,error:detail});
       }
-    } catch { throw new HttpError(503, 'Database belum siap. Jalankan migration D1.'); }
+    }
+    if (checks.some(check=>check.status!=='ready')) {
+      return json({success:false,database:'not_ready',message:'Pemeriksaan D1 gagal. Lihat checks untuk tabel terkait dan runtime logs dengan diagnosticId ini.',checks,diagnosticId},503);
+    }
     return json({success:true, database:'ready', receiptStorage:!!env.RECEIPTS_BUCKET});
   }
   if (path.startsWith('/api/auth/') && ['register','login','google'].includes(path.split('/').pop()!) && method==='POST') {

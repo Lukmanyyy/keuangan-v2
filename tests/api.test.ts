@@ -142,3 +142,15 @@ test('password whitespace is preserved and expired sessions cannot authenticate'
     assert.equal((await f.call('/auth/me','GET',undefined,cookie)).response.status,401);
   }finally{f.sqlite.close();}
 });
+test('health reports the failing table without exposing database errors publicly',async()=>{
+  const f=fixture();try {
+    f.sqlite.exec('DROP TABLE rate_limits');
+    const result=await f.call('/health');
+    assert.equal(result.response.status,503);
+    assert.equal(result.data.database,'not_ready');
+    assert.equal(result.data.checks.find((c:any)=>c.table==='rate_limits').status,'missing_table');
+    assert.equal(result.data.checks.find((c:any)=>c.table==='users').status,'ready');
+    assert.ok(result.data.diagnosticId);
+    assert.ok(!JSON.stringify(result.data).includes('no such table'));
+  }finally{f.sqlite.close();}
+});

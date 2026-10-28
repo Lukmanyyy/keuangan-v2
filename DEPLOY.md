@@ -217,6 +217,8 @@ Tidak ada PIN default atau pemberian admin otomatis kepada pendaftar pertama. Pe
 
 Health tidak menguji billing/key/kuota AI atau konfigurasi Google. Scan gagal harus menampilkan error, bukan hasil belanja contoh palsu.
 
+Jika health mengembalikan `database: "not_ready"`, periksa daftar `checks`: `missing_table` berarti tabel tersebut tidak ditemukan pada database yang dipakai deployment, sedangkan `query_failed` berarti pembacaan D1 gagal karena sebab lain. Gunakan `diagnosticId` untuk mencari detail di runtime/Functions logs. Jangan menghapus tabel atau menjalankan ulang SQL awal tanpa memeriksa database/environment yang benar.
+
 ## 12. Domain, backup, dan update selanjutnya
 
 **Domain:** Pages → **Custom domains → Set up a custom domain**. Ikuti DNS dan tunggu HTTPS aktif. Tambahkan origin domain baru ke Google Cloud. Login ulang di domain baru: cookie tidak pindah dari `pages.dev`, tetapi data D1 tetap sama jika binding sama.
