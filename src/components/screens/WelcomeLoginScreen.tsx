@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../../../shared/auth';
 import { User } from '../../types';
 import { Wallet3DIllustration } from '../Wallet3DIllustration';
 import { motion, AnimatePresence } from 'motion/react';
@@ -274,8 +275,8 @@ export const WelcomeLoginScreen: React.FC<WelcomeLoginScreenProps> = ({
         setErrorMsg('Alamat email wajib diisi');
         return;
       }
-      if (password.length < 10 || password.length > 128) {
-        setErrorMsg('Kata sandi harus 10–128 karakter');
+      if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+        setErrorMsg(`Kata sandi harus ${MIN_PASSWORD_LENGTH}–${MAX_PASSWORD_LENGTH} karakter`);
         return;
       }
       if (password !== confirmPassword) {
@@ -665,8 +666,8 @@ export const WelcomeLoginScreen: React.FC<WelcomeLoginScreenProps> = ({
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Minimal 10 karakter"
-                    maxLength={128}
+                    placeholder={`Minimal ${MIN_PASSWORD_LENGTH} karakter`}
+                    maxLength={MAX_PASSWORD_LENGTH}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                   required
                 />

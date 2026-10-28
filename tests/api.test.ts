@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { handleRequest, type Env } from '../cloudflare/api';
 import { digest } from '../cloudflare/security';
+import { SESSION_TTL_SECONDS } from '../shared/auth';
 
 // Real SQLite with the production migration, not a SQL-string mock.
 // A separate Wrangler smoke test checks compatibility with workerd/D1.
@@ -218,5 +219,42 @@ test('changing configured admin email disables old access and demotes the previo
     assert.equal(second.response.status,200);assert.equal(second.data.user.role,'admin');
     assert.equal(f.sqlite.prepare('SELECT role FROM users WHERE id=?').get(first.data.user.id)?.role,'user');
     assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM sessions WHERE user_id=?').get(first.data.user.id)?.n,0);
+  }finally{f.sqlite.close();}
+});
+test('six-character passwords work for registration, admin login and user password reset',async()=>{
+  const f=fixture();try {
+    assert.equal((await f.call('/auth/register','POST',{name:'Short',email:'short@example.com',password:'abc12'})).response.status,400);
+    assert.equal((await f.call('/auth/register','POST',{name:'Short',email:'short@example.com',password:'abc123'})).response.status,200);
+    assert.equal((await f.call('/auth/login','POST',{email:'short@example.com',password:'abc123'})).response.status,200);
+    f.env.ADMIN_EMAIL='admin-six@example.com';f.env.ADMIN_PASSWORD='six12';
+    assert.equal((await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD})).response.status,503);
+    f.env.ADMIN_PASSWORD='six123';
+    const owner=await f.call('/auth/login','POST',{email:f.env.ADMIN_EMAIL,password:f.env.ADMIN_PASSWORD});
+    assert.equal(owner.response.status,200);assert.equal(owner.data.user.role,'admin');
+    const cookie=owner.response.headers.get('Set-Cookie')!.split(';')[0];
+    const member=f.sqlite.prepare('SELECT id FROM users WHERE email=?').get('short@example.com')!;
+    assert.equal((await f.call('/admin/reset-password','POST',{userId:member.id,newPassword:'reset'},cookie)).response.status,400);
+    assert.equal((await f.call('/admin/reset-password','POST',{userId:member.id,newPassword:'reset6'},cookie)).response.status,200);
+    assert.equal((await f.call('/auth/login','POST',{email:'short@example.com',password:'reset6'})).response.status,200);
+  }finally{f.sqlite.close();}
+});
+test('persistent login cookie and database session last 30 days, then expire or logout',async()=>{
+  const f=fixture();try {
+    const start=Math.floor(Date.now()/1000);const account=await f.account('persistent');
+    const login=await f.call('/auth/login','POST',{email:account.user.email,password:'Safe Password 123'});
+    const header=login.response.headers.get('Set-Cookie')!;
+    assert.ok(header.includes('Max-Age=2592000'));assert.ok(header.includes('Expires='));
+    assert.ok(header.includes('HttpOnly'));assert.ok(header.includes('Secure'));assert.ok(header.includes('SameSite=Strict'));
+    const cookie=header.split(';')[0];const hash=await digest(cookie.split('=')[1]);
+    const session=f.sqlite.prepare('SELECT expires_at FROM sessions WHERE token_hash=?').get(hash)!;
+    assert.ok(Number(session.expires_at)>=start+SESSION_TTL_SECONDS && Number(session.expires_at)<=Math.floor(Date.now()/1000)+SESSION_TTL_SECONDS);
+    // A new request only needs the browser's persisted cookie, not JS memory or localStorage.
+    assert.equal((await f.call('/auth/me','GET',undefined,cookie)).data.user.id,account.user.id);
+    f.sqlite.prepare('UPDATE sessions SET expires_at=? WHERE token_hash=?').run(Math.floor(Date.now()/1000)-1,hash);
+    assert.equal((await f.call('/auth/me','GET',undefined,cookie)).response.status,401);
+    const logout=await f.call('/auth/logout','POST',{},account.cookie);
+    assert.ok(logout.response.headers.get('Set-Cookie')!.includes('Max-Age=0'));
+    assert.ok(logout.response.headers.get('Set-Cookie')!.includes('Thu, 01 Jan 1970'));
+    assert.equal((await f.call('/auth/me','GET',undefined,account.cookie)).response.status,401);
   }finally{f.sqlite.close();}
 });

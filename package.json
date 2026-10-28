@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run build && wrangler pages dev dist --config wrangler.local.toml",
+    "dev": "npm run build && wrangler pages dev dist --d1 DB=00000000-0000-0000-0000-000000000000 --compatibility-date 2026-10-27 --compatibility-flags nodejs_compat",
     "dev:ui": "vite --host 127.0.0.1",
     "build": "vite build",
     "start": "npm run dev",

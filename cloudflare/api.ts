@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { csvCell, digest, email, hashPassword, HttpError, money, password, requireValue, secretsEqual, text, verifyPassword } from './security';
+import { csvCell, digest, email, hashPassword, HttpError, isValidPassword, money, password, requireValue, secretsEqual, text, verifyPassword } from './security';
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH, SESSION_TTL_SECONDS } from '../shared/auth';
 import { scanReceipt } from './scan';
 
 export interface Env {
@@ -26,9 +27,10 @@ const txView = (t: Row) => ({id:t.id, type:t.type, walletId:t.wallet_id, toWalle
   merchant:t.merchant, amount:t.amount, date:t.date, category:t.category, notes:t.notes,
   receiptImage:t.receipt_key ? `/api/receipts/${encodeURIComponent(t.id)}` : undefined,
   items:JSON.parse(t.items_json || '[]'), reminder:!!t.reminder, createdAt:t.created_at});
-function cookie(request: Request, token: string, maxAge = 604800) {
+function cookie(request: Request, token: string, maxAge = SESSION_TTL_SECONDS) {
   const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
-  return `${cookieName(request)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`;
+  const expires = new Date(maxAge>0 ? Date.now()+maxAge*1000 : 0).toUTCString();
+  return `${cookieName(request)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Expires=${expires}${secure}`;
 }
 function sessionToken(request: Request) {
   const name = cookieName(request);
@@ -65,8 +67,7 @@ async function checkManagedAdmin(env: Env, user: Row) {
   if (user.role!=='admin') return;
   const managed = await env.DB.prepare("SELECT value FROM app_settings WHERE key='env_admin_user_id'").first<Row>();
   if (managed?.value!==user.id) return;
-  requireValue(user.email.toLowerCase()===adminEmail(env) && typeof env.ADMIN_PASSWORD==='string' &&
-    env.ADMIN_PASSWORD.length>=12 && env.ADMIN_PASSWORD.length<=128 && env.ADMIN_PASSWORD.trim().length>0,
+  requireValue(user.email.toLowerCase()===adminEmail(env) && isValidPassword(env.ADMIN_PASSWORD),
     'Akses admin konfigurasi sudah dinonaktifkan atau berubah. Periksa konfigurasi pemilik dan login ulang.',401);
 }
 async function auth(request: Request, env: Env): Promise<Row> {
@@ -85,7 +86,7 @@ async function loginResponse(request: Request, env: Env, user: Row) {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(Math.floor(Date.now()/1000)),
     env.DB.prepare('DELETE FROM rate_limits WHERE key IN (SELECT key FROM rate_limits WHERE expires_at<=? LIMIT 100)').bind(Math.floor(Date.now()/1000)),
-    env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(await digest(token), user.id, Math.floor(Date.now()/1000)+604800),
+    env.DB.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').bind(await digest(token), user.id, Math.floor(Date.now()/1000)+SESSION_TTL_SECONDS),
   ]);
   return json({success:true, user:safeUser(user)}, 200, {'Set-Cookie':cookie(request,token)});
 }
@@ -94,8 +95,8 @@ async function loginConfiguredAdmin(request: Request, env: Env, pass: string) {
   const secret = env.ADMIN_PASSWORD;
   requireValue(address && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) && address.length<=254,
     'ADMIN_EMAIL belum valid. Periksa Variables and Secrets di Cloudflare.',503);
-  requireValue(typeof secret==='string' && secret.length>=12 && secret.length<=128 && secret.trim().length>0,
-    'ADMIN_PASSWORD harus diatur sebagai secret dengan 12–128 karakter. Redeploy setelah menyimpan.',503);
+  requireValue(isValidPassword(secret),
+    `ADMIN_PASSWORD harus diatur sebagai secret dengan ${MIN_PASSWORD_LENGTH}–${MAX_PASSWORD_LENGTH} karakter. Redeploy setelah menyimpan.`,503);
   requireValue(await secretsEqual(pass,secret),'Email/nama pengguna atau kata sandi salah',401);
   // Only proof of the deployment secret can create/promote this account.
   // Existing sessions and Google links cannot inherit the newly granted privileges.

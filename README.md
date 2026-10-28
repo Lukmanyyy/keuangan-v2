@@ -12,6 +12,7 @@ Pencatatan keuangan React/Vite dengan **Cloudflare Pages + Pages Functions + D1 
 
 - Akun email/password dan login Google dengan verifikasi ID token di server.
 - Sesi cookie HttpOnly/Secure/SameSite, token acak dan hash token di D1.
+- Login persisten 30 hari; password pendaftaran/reset/admin minimum 6 karakter (maksimum 128).
 - Password PBKDF2-SHA256 dengan salt unik; tidak pernah dikembalikan ke browser.
 - Dompet, transaksi, transfer, kategori, dan pengaturan per akun di D1.
 - Trigger SQLite menjaga perubahan saldo dan pembalikan transfer tetap atomik.
@@ -20,6 +21,7 @@ Pencatatan keuangan React/Vite dengan **Cloudflare Pages + Pages Functions + D1 
 - Laporan PDF/XLSX/CSV berdasarkan periode yang dipilih, serta ekspor JSON transaksi.
 - Admin dengan role D1, reset sandi yang mencabut sesi, serta penghapusan akun.
 - Admin pemilik dapat dibuat otomatis saat login memakai `ADMIN_EMAIL` + secret `ADMIN_PASSWORD` Cloudflare, tanpa SQL pemberian role.
+- Panel admin hanya dibuka dari dalam aplikasi oleh akun admin; URL publik lama dialihkan ke beranda. Otorisasi API tetap diperiksa server.
 - Rate limit autentikasi dan AI, validasi input, proteksi CSRF, dan security headers.
 
 ## Development lokal
@@ -38,6 +40,8 @@ npm run dev
 ```
 
 Buka alamat yang ditampilkan Wrangler (biasanya `http://localhost:8788`). `npm run dev` membangun frontend lalu menjalankan Pages + D1 lokal. Setelah mengedit frontend, jalankan `npm run build` lagi. `npm run dev:ui` hanya untuk mengerjakan tampilan, bukan pengujian backend.
+
+Pages dev memakai flag binding lokal pada script, bukan `--config`: Pages tidak mendukung path konfigurasi kustom. `wrangler.local.toml` hanya dipakai perintah migration D1 lokal. Untuk menguji arsip foto tanpa layanan R2 berbayar, tambahkan `--r2 RECEIPTS_BUCKET` pada perintah Pages dev lokal; ini hanya emulator lokal, bukan bucket production.
 
 ```sh
 npm run lint
@@ -58,6 +62,7 @@ src/                       React, kategori, API client, laporan
 tests/                     Tes keamanan, SQLite/API, dan utilitas keuangan
 scripts/smoke.ts            Smoke test HTTP dengan workerd/D1 lokal
 wrangler.local.toml        Konfigurasi development lokal saja
+shared/                    Kebijakan password dan masa sesi yang dipakai bersama
 DEPLOY.md                  Tutorial operasional
 ```
 

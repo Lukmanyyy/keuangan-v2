@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, type AdminOverview } from '../../services/api';
 import { formatRupiah } from '../../utils/finance';
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../../../shared/auth';
 
 export function AdminScreen({onBack}:{onBack:()=>void}) {
   const [data,setData]=useState<AdminOverview|null>(null); const [error,setError]=useState('');
@@ -23,7 +24,7 @@ export function AdminScreen({onBack}:{onBack:()=>void}) {
       </section>
       <div className="overflow-auto"><table className="w-full text-left text-sm"><thead><tr><th>Pengguna</th><th>Role</th><th>Dompet</th><th>Transaksi</th><th>Saldo</th><th>Aksi</th></tr></thead><tbody>
         {data.users.map(u=><tr key={u.id} className="border-t border-slate-700"><td className="p-3">{u.name}<br/>{u.email}</td><td>{u.role}</td><td>{u.walletsCount}</td><td>{u.transactionsCount}</td><td>{formatRupiah(u.totalBalance)}</td><td className="space-x-3">
-          <button disabled={busy} onClick={()=>{const pass=prompt(`Kata sandi baru ${u.email} (10–128 karakter). Semua sesi akan dicabut.`);if(pass)void action(()=>api.resetUserPassword(u.id,pass));}}>Reset sandi</button>
+          <button disabled={busy} onClick={()=>{const pass=prompt(`Kata sandi baru ${u.email} (${MIN_PASSWORD_LENGTH}–${MAX_PASSWORD_LENGTH} karakter). Semua sesi akan dicabut.`);if(pass)void action(()=>api.resetUserPassword(u.id,pass));}}>Reset sandi</button>
           <button disabled={busy} className="text-red-300" onClick={()=>{if(confirm(`Hapus permanen akun ${u.email} beserta semua datanya?`))void action(()=>api.deleteAdminUser(u.id));}}>Hapus</button>
         </td></tr>)}
       </tbody></table></div>

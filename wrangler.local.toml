@@ -1,4 +1,6 @@
-# LOCAL DEVELOPMENT ONLY. Cloudflare Pages Git deployments do not use this file.
+# LOCAL DATABASE MIGRATIONS ONLY. Pages dev uses explicit CLI binding flags.
+# Do not pass --config to pages dev: Pages does not support custom config paths.
+# Cloudflare Pages Git deployments do not use this file.
 # Production/preview bindings and variables are configured in the dashboard.
 name = "keuangan-v2-local"
 pages_build_output_dir = "./dist"
@@ -17,7 +19,4 @@ database_name = "uangku-db"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
-# Optional local R2 emulator (no real bucket required).
-# [[r2_buckets]]
-# binding = "RECEIPTS_BUCKET"
-# bucket_name = "uangku-receipts"
+# For local R2 tests, add --r2 RECEIPTS_BUCKET to the pages dev command.

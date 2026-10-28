@@ -1,3 +1,5 @@
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../shared/auth';
+
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -19,8 +21,11 @@ export function money(value: unknown, positive = true): number {
   requireValue(typeof value === 'number' && Number.isSafeInteger(value) && Math.abs(value) <= 1e12 && (!positive || value > 0), 'Nominal harus bilangan bulat rupiah yang valid');
   return value;
 }
+export function isValidPassword(value: unknown): value is string {
+  return typeof value==='string' && value.trim().length>0 && value.length>=MIN_PASSWORD_LENGTH && value.length<=MAX_PASSWORD_LENGTH;
+}
 export function password(value: unknown): string {
-  requireValue(typeof value === 'string' && value.trim().length > 0 && value.length >= 10 && value.length <= 128, 'Kata sandi harus 10–128 karakter dan tidak boleh hanya spasi');
+  requireValue(isValidPassword(value), `Kata sandi harus ${MIN_PASSWORD_LENGTH}–${MAX_PASSWORD_LENGTH} karakter dan tidak boleh hanya spasi`);
   return value;
 }
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');

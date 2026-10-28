@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 const base=process.env.SMOKE_BASE_URL || 'http://127.0.0.1:8788';
 assert.ok(['localhost','127.0.0.1'].includes(new URL(base).hostname),'Smoke test only runs against localhost; it creates test data.');
+for (const path of ['/admin','/admin/settings']) {
+  const response=await fetch(base+path,{redirect:'manual'});
+  assert.equal(response.status,302);
+  assert.equal(new URL(response.headers.get('Location')!,base).pathname,'/');
+}
 let cookie='';
 async function call(path:string,method='GET',body?:unknown) {
   const res=await fetch(base+'/api'+path,{method,headers:{'Content-Type':'application/json','X-Uangku-Request':'1',Origin:base,Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -33,4 +38,4 @@ assert.equal((await call('/settings','POST',{darkMode:true})).status,200);
 assert.equal((await call('/settings')).data.settings.darkMode,true);
 assert.equal((await call('/auth/logout','POST',{})).status,200);
 assert.equal((await call('/auth/me')).status,401);
-console.log(`Cloudflare smoke test passed: auth, cookies, D1 wallets, transfer/reversal, settings, admin protection, logout${health.data.receiptStorage?', R2 private upload/read/delete':''}.`);
+console.log(`Cloudflare smoke test passed: legacy admin redirects, auth, cookies, D1 wallets, transfer/reversal, settings, admin protection, logout${health.data.receiptStorage?', R2 private upload/read/delete':''}.`);

@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api, ApiError } from './services/api';
 import { downloadReport } from './services/reports';
 import { syncCategories, clearCategoryCache } from './data/categories';
+import { isRemovedAdminUrl, publicScreenFromUrl } from './utils/navigation';
 import { User, Wallet, Transaction, AppSettings, ScreenId } from './types';
 import { WelcomeLoginScreen } from './components/screens/WelcomeLoginScreen';
 import { DashboardScreen } from './components/screens/DashboardScreen';
@@ -28,7 +29,6 @@ import { LegalScreen } from './components/screens/LegalScreen';
 import { BottomNav } from './components/BottomNav';
 import { WebHeader } from './components/WebHeader';
 import { AiSettingsModal } from './components/modals/AiSettingsModal';
-import { SecretAdminModal } from './components/modals/SecretAdminModal';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -49,31 +49,13 @@ export default function App() {
   // Current screen state
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(() => {
     if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      const hash = window.location.hash;
-      if (path === '/admin' || path.startsWith('/admin') || hash === '#admin') {
-        return 'admin';
-      }
-      if (path === '/privacy' || path.startsWith('/privacy') || hash === '#privacy') {
-        return 'privacy';
-      }
-      if (path === '/terms' || path.startsWith('/terms') || hash === '#terms') {
-        return 'terms';
-      }
+      return publicScreenFromUrl(window.location.pathname,window.location.hash);
     }
     return 'welcome';
   });
 
   const handleNavigate = (screen: ScreenId) => {
-    if (screen === 'admin') {
-      try {
-        window.history.pushState({}, '', '/admin');
-      } catch {}
-    } else if (currentScreen === 'admin') {
-      try {
-        window.history.pushState({}, '', '/');
-      } catch {}
-    }
+    if (screen === 'admin' && (!isAuthenticated || user?.role!=='admin')) return;
     setCurrentScreen(screen);
   };
 
@@ -83,8 +65,6 @@ export default function App() {
   const [selectedScanType, setSelectedScanType] = useState<'pengeluaran' | 'pemasukan'>('pengeluaran');
   const [selectedScanWalletId, setSelectedScanWalletId] = useState<string>('');
   const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
-  const [isSecretAdminModalOpen, setIsSecretAdminModalOpen] = useState(false);
-  const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
 
   // Scanned data cache for review
   const [scannedData, setScannedData] = useState<any>({
@@ -141,24 +121,25 @@ export default function App() {
     }
   }, []);
 
-  // URL change listener for /admin and #admin
+  // Only public legal screens are URL-addressable. Admin is in-app state only.
   useEffect(() => {
     const handleUrlChange = () => {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
         const hash = window.location.hash;
-        if (path === '/admin' || path.startsWith('/admin') || hash === '#admin') {
-          setCurrentScreen('admin');
-        } else if (path === '/privacy' || path.startsWith('/privacy') || hash === '#privacy') {
-          setCurrentScreen('privacy');
-        } else if (path === '/terms' || path.startsWith('/terms') || hash === '#terms') {
-          setCurrentScreen('terms');
+        if (isRemovedAdminUrl(path,hash)) {
+          window.history.replaceState({},'', '/');
+          setCurrentScreen(current=>current==='welcome'?'welcome':'dashboard');
+        } else {
+          const target = publicScreenFromUrl(path,hash);
+          if (target!=='welcome') setCurrentScreen(target);
         }
       }
     };
 
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
+    handleUrlChange();
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
       window.removeEventListener('hashchange', handleUrlChange);
@@ -168,25 +149,17 @@ export default function App() {
   // Check auth session on startup
   useEffect(() => {
     const checkAuth = async () => {
-      const isAdminRoute =
-        typeof window !== 'undefined' &&
-        (window.location.pathname.startsWith('/admin') || window.location.hash === '#admin');
-
       try {
         const res = await api.getMe();
         if (res.success && res.user) {
           setUser(res.user);
           setIsAuthenticated(true);
-          if (!isAdminRoute) {
-            setCurrentScreen('dashboard');
-          }
+          setCurrentScreen(current=>current==='privacy'||current==='terms'?current:'dashboard');
           await loadUserData();
         } else {
           setUser(null);
           setIsAuthenticated(false);
-          if (!isAdminRoute) {
-            setCurrentScreen('welcome');
-          }
+          setCurrentScreen(current=>current==='privacy'||current==='terms'?current:'welcome');
         }
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 401)) {
@@ -194,9 +167,7 @@ export default function App() {
         }
         setUser(null);
         setIsAuthenticated(false);
-        if (!isAdminRoute) {
-          setCurrentScreen('welcome');
-        }
+        setCurrentScreen(current=>current==='privacy'||current==='terms'?current:'welcome');
       } finally {
         setIsAuthChecking(false);
       }
@@ -216,7 +187,6 @@ export default function App() {
   // Handle logout
   const handleLogout = async () => {
     try { await api.logout(); } catch (error) { alert(error instanceof Error ? error.message : 'Logout gagal'); return; }
-    setIsAdminAuthorized(false);
     clearCategoryCache();
     setScannedData({});
     setUser(null);
@@ -378,19 +348,7 @@ export default function App() {
   }
 
   // The server verifies the session and role on EVERY admin API request.
-  if (currentScreen === 'admin') {
-    if (!isAdminAuthorized) {
-      return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-          <SecretAdminModal
-            isOpen={true}
-            onClose={() => handleNavigate(isAuthenticated ? 'dashboard' : 'welcome')}
-            onSuccess={() => setIsAdminAuthorized(true)}
-          />
-        </div>
-      );
-    }
-
+  if (currentScreen === 'admin' && isAuthenticated && user?.role==='admin') {
     return (
       <AdminScreen
         onBack={() => handleNavigate(isAuthenticated ? 'dashboard' : 'welcome')}
@@ -404,21 +362,7 @@ export default function App() {
   }
   if (!isAuthenticated || !user || currentScreen === 'welcome') {
     return (
-      <>
-        <WelcomeLoginScreen
-          onLoginSuccess={handleLoginSuccess}
-          onSecretAdminTrigger={() => setIsSecretAdminModalOpen(true)}
-        />
-        <SecretAdminModal
-          isOpen={isSecretAdminModalOpen}
-          onClose={() => setIsSecretAdminModalOpen(false)}
-          onSuccess={() => {
-            setIsAdminAuthorized(true);
-            setIsSecretAdminModalOpen(false);
-            handleNavigate('admin');
-          }}
-        />
-      </>
+      <WelcomeLoginScreen onLoginSuccess={handleLoginSuccess} />
     );
   }
 
@@ -448,7 +392,7 @@ export default function App() {
           onOpenAddModal={() => handleNavigate('add_transaction')}
           onOpenAiSettings={() => setIsAiSettingsOpen(true)}
           onLogout={handleLogout}
-          onSecretAdminTrigger={() => setIsSecretAdminModalOpen(true)}
+          onSecretAdminTrigger={activeUser.role==='admin'?()=>handleNavigate('admin'):undefined}
         />
       )}
 
@@ -640,15 +584,6 @@ export default function App() {
         }}
       />
 
-      <SecretAdminModal
-        isOpen={isSecretAdminModalOpen}
-        onClose={() => setIsSecretAdminModalOpen(false)}
-        onSuccess={() => {
-          setIsAdminAuthorized(true);
-          setIsSecretAdminModalOpen(false);
-          handleNavigate('admin');
-        }}
-      />
     </div>
   );
 }

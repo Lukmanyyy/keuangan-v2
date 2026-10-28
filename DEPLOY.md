@@ -118,7 +118,7 @@ Buka **Pages project → Settings → Variables and Secrets → Add**. Pilih **P
 |---|---|---|
 | `NODE_VERSION` | Plain text | `24` untuk build |
 | `ADMIN_EMAIL` | Plain text, opsional | Email akun pemilik yang akan dikelola sebagai admin |
-| `ADMIN_PASSWORD` | **Secret / Encrypt**, opsional | Password admin kuat, 12–128 karakter; wajib berpasangan dengan `ADMIN_EMAIL` |
+| `ADMIN_PASSWORD` | **Secret / Encrypt**, opsional | Password admin 6–128 karakter; wajib berpasangan dengan `ADMIN_EMAIL` |
 | `GOOGLE_CLIENT_ID` | Plain text, opsional | Client ID Google Cloud milik Anda |
 | `GEMINI_API_KEY` | **Secret / Encrypt** | Key Gemini untuk scan |
 | `OPENAI_API_KEY` | **Secret / Encrypt**, opsional | Key OpenAI untuk scan/fallback |
@@ -192,12 +192,12 @@ Preview membutuhkan origin Google yang didaftarkan juga. Origin preview acak tid
 
 1. Buka **Pages → project Anda → Settings → Variables and Secrets → Production**.
 2. Tambahkan **`ADMIN_EMAIL`** sebagai Plain text, isi email admin milik Anda.
-3. Tambahkan **`ADMIN_PASSWORD`** sebagai **Secret / Encrypt**, isi password unik dan kuat **12–128 karakter** (disarankan acak 16+ karakter). Tidak ada password bawaan. Jangan kirim nilai password ke chat atau GitHub.
+3. Tambahkan **`ADMIN_PASSWORD`** sebagai **Secret / Encrypt**, isi password **6–128 karakter**, bukan hanya spasi. Password lebih panjang dan unik tetap lebih aman. Tidak ada password bawaan. Jangan kirim nilai password ke chat atau GitHub.
 4. Simpan keduanya lalu **redeploy commit terbaru**. Untuk Preview, konfigurasi terpisah; jangan gunakan password admin production di deployment pengujian.
 5. Buka halaman utama website → **Mulai Sekarang → Masuk** (bukan Daftar).
 6. Login menggunakan email dan password persis sesuai kedua variabel tersebut.
 7. Pada login pertama yang berhasil, server membuat akun beserta pengaturannya dengan role `admin` di D1. Jika email sudah memiliki akun, ID/data dompet tetap dipertahankan, password diganti dengan hash secret, dan seluruh sesi serta tautan Google lama dicabut agar tidak ikut mendapat hak admin.
-8. Buka **Profil → Panel admin**, atau `/admin`, lalu **Buka panel**.
+8. Buka **Profil → Panel admin** setelah login. Panel dibuka di dalam aplikasi tanpa mengubah URL. Alamat lama `/admin` (termasuk subpath) dialihkan ke beranda; hash `#admin` tidak membuka panel. Refresh atau membuka ulang website mengembalikan pengguna ke dashboard, bukan panel.
 
 Tidak perlu daftar akun terlebih dahulu atau menjalankan `UPDATE users`. Database dan tabel D1 tetap harus sudah siap; variabel admin tidak menggantikan pembuatan skema. Bila login masih gagal, periksa `/api/health` dan runtime logs.
 
@@ -205,6 +205,7 @@ Tidak perlu daftar akun terlebih dahulu atau menjalankan `UPDATE users`. Databas
 
 - Mengetahui/mendaftarkan email admin saja tidak cukup. Akun baru hanya dibuat/dipromosikan setelah secret cocok; pendaftaran publik untuk email yang dikonfigurasi ditolak.
 - Akun admin konfigurasi harus login dengan password secret, bukan Google atau password lama, termasuk jika memakai alias nama akun.
+- Menyembunyikan URL bukan pengganti otorisasi. Endpoint `/api/admin/*` tetap digunakan aplikasi dan memeriksa sesi serta role admin di server; akun biasa tetap ditolak.
 - Untuk mengganti password admin, ubah `ADMIN_PASSWORD` di Cloudflare, redeploy, lalu **login sekali dengan password baru**. Login berhasil tersebut mencabut sesi-sesi sebelumnya. Mengubah secret saja tidak otomatis mengakhiri cookie sesi yang sudah diterbitkan.
 - Jika `ADMIN_EMAIL` diganti, akses akun admin konfigurasi lama ditolak; login pertama pemilik baru menurunkan role akun terkelola sebelumnya menjadi user dan mencabut sesinya. Data lamanya tidak dihapus.
 - Menghapus pasangan variabel menonaktifkan login/sesi admin terkelola, bukan menghapus datanya. Admin lain yang sengaja diberi role melalui D1 tetap terpisah dari mekanisme ini.
@@ -247,7 +248,7 @@ Jika health mengembalikan `database: "not_ready"`, periksa daftar `checks`: `mis
 | Health belum siap / `no such table` | Jalankan seluruh SQL awal pada database yang benar; jangan hanya membuat database kosong |
 | `table already exists` | SQL sudah dijalankan atau ada skema lama; jangan drop tabel, gunakan database baru atau migration khusus |
 | API mengembalikan HTML | Commit revisi belum terdeploy, root/build salah, atau hanya deploy static ZIP tanpa Functions |
-| Login gagal | Cookie aktif, domain konsisten, akun benar, password pendaftaran 10–128 karakter; cek runtime logs |
+| Login gagal | Cookie aktif, domain konsisten, akun benar, password pendaftaran 6–128 karakter; cek runtime logs |
 | Google error origin/audience | Origin Google Cloud dan `GOOGLE_CLIENT_ID` Cloudflare harus cocok; redeploy |
 | Scan 503 | Secret provider belum diisi atau provider pilihan tidak memiliki key |
 | Scan 502 | Gambar, key, model, billing/kuota, atau timeout provider bermasalah |
@@ -260,7 +261,8 @@ Jika health mengembalikan `database: "not_ready"`, periksa daftar `checks`: `mis
 ## Batasan dan biaya
 
 - Tanpa VPS bukan berarti gratis tanpa batas. D1, Functions, R2, dan provider AI memiliki kuota/biaya; pantau penggunaan dan budget.
-- Password PBKDF2-SHA256 dengan salt unik dan 100.000 iterasi sesuai batas WebCrypto Workers. Cookie HttpOnly, Secure pada HTTPS, SameSite=Strict; sesi 7 hari. Proteksi CSRF dan rate limit dasar tersedia. Untuk situs publik besar pertimbangkan WAF/Turnstile/perlindungan abuse tambahan.
+- Pendaftaran, reset password pengguna, dan password admin menerima 6–128 karakter, bukan hanya spasi. Password lama yang lebih panjang tetap valid; tidak dipotong atau diganti otomatis.
+- Password PBKDF2-SHA256 dengan salt unik dan 100.000 iterasi sesuai batas WebCrypto Workers. Cookie persisten HttpOnly, Secure pada HTTPS, SameSite=Strict, Max-Age dan Expires; sesi 30 hari sejak login. Menutup browser/HP tidak menghapus sesi selama cookie masih disimpan. Logout, kedaluwarsa, pencabutan sesi, penghapusan data browser, atau keluar dari mode privat dapat membuat pengguna perlu login lagi. Setelah update dari versi 7 hari, login ulang sekali untuk mendapatkan cookie 30 hari. Proteksi CSRF dan rate limit tetap tersedia; minimum 6 karakter bukan jaminan password kuat.
 - Login email/password belum memiliki verifikasi email/reset email otomatis. Lupa password melalui admin; login Google menyediakan identitas email terverifikasi.
 - Preferensi notifikasi disimpan, tetapi layanan push/scheduler belum tersedia. Tidak ada penyimpanan offline atau transaksi sukses palsu saat server gagal.
 - API transaksi memakai pagination; ekspor API CSV/JSON maksimal 10.000 transaksi per permintaan (gunakan rentang tanggal jika lebih). Ekspor layar laporan memakai data yang dimuat browser dan periode yang dipilih.
